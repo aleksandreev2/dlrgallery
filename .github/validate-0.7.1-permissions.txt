@@ -1,0 +1,1 @@
+Validate DLR Gallery 0.7.1 final media permission state.
