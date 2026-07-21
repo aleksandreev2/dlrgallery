@@ -47,7 +47,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.dlrgallery.app.data.GalleryAlbum
 import com.dlrgallery.app.data.MediaImage
 import java.time.Instant
@@ -160,8 +159,8 @@ fun AlbumGrid(
 fun PermissionRequiredState(onRequestAccess: () -> Unit) {
     MessageState(
         icon = Icons.Outlined.Lock,
-        title = "Нужен доступ к фотографиям",
-        message = "DLR Gallery читает изображения только на устройстве. Фотографии никуда не отправляются.",
+        title = "Нужен доступ к фото и видео",
+        message = "DLR Gallery читает медиатеку только на устройстве. Файлы никуда не отправляются.",
         action = {
             Button(onClick = onRequestAccess) {
                 Text("Разрешить доступ")
@@ -177,7 +176,7 @@ fun LoadingMediaState() {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Сканируем фотографии…",
+                text = "Сканируем медиатеку…",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -188,8 +187,8 @@ fun LoadingMediaState() {
 fun EmptyMediaState() {
     MessageState(
         icon = Icons.Outlined.Image,
-        title = "Фотографий пока нет",
-        message = "Для проверки перетащите несколько JPG или PNG прямо в окно эмулятора, затем нажмите «Обновить».",
+        title = "Медиафайлов пока нет",
+        message = "Добавьте на устройство фотографии или видео, затем нажмите «Обновить».",
     )
 }
 
@@ -198,7 +197,7 @@ fun EmptyAlbumsState() {
     MessageState(
         icon = Icons.Outlined.Collections,
         title = "Альбомов пока нет",
-        message = "Альбомы появятся автоматически после добавления фотографий на устройство.",
+        message = "Альбомы появятся автоматически после добавления фотографий или видео.",
     )
 }
 
@@ -249,8 +248,8 @@ private fun PhotoTile(
                 },
             ),
     ) {
-        AsyncImage(
-            model = image.uri,
+        MediaThumbnail(
+            image = image,
             contentDescription = image.displayName,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -286,14 +285,16 @@ private fun AlbumCard(
             .fillMaxWidth()
             .combinedClickable(onClick = onClick),
     ) {
-        AsyncImage(
-            model = album.coverUri,
+        MediaThumbnail(
+            mediaStoreId = album.coverMediaStoreId,
+            uri = album.coverUri,
+            isVideo = album.coverIsVideo,
+            durationMillis = 0L,
             contentDescription = "Обложка альбома ${album.name}",
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1.32f)
-                .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .clip(RoundedCornerShape(18.dp)),
             contentScale = ContentScale.Crop,
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -327,12 +328,12 @@ private fun PartialAccessBanner(onChangeAccess: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Показаны только выбранные фото",
+                    text = "Показаны только выбранные файлы",
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "Android ограничил доступ к остальной галерее.",
+                    text = "Android ограничил доступ к остальной медиатеке.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
                 )
@@ -360,6 +361,7 @@ private fun DateHeader(
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Text(
             text = count,
@@ -456,5 +458,13 @@ private fun formatDateHeader(date: LocalDate): String {
     }
 }
 
-fun formatPhotoCount(count: Int): String =
-    "${count.toString().reversed().chunked(3).joinToString(" ").reversed()} фото"
+fun formatPhotoCount(count: Int): String {
+    val formatted = count.toString().reversed().chunked(3).joinToString(" ").reversed()
+    val word = when {
+        count % 100 in 11..14 -> "файлов"
+        count % 10 == 1 -> "файл"
+        count % 10 in 2..4 -> "файла"
+        else -> "файлов"
+    }
+    return "$formatted $word"
+}
