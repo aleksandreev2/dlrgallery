@@ -1,43 +1,30 @@
 package com.dlrgallery.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Forest
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Landscape
-import androidx.compose.material.icons.outlined.LocalFlorist
-import androidx.compose.material.icons.outlined.LocationCity
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Pets
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,59 +41,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
-private data class DemoPhoto(
-    val title: String,
-    val colors: List<Color>,
-    val icon: ImageVector,
-)
-
-private data class DemoAlbum(
-    val name: String,
-    val count: Int,
-    val cover: DemoPhoto,
-)
-
-private val demoPhotos = listOf(
-    DemoPhoto("Озеро", listOf(Color(0xFF176B87), Color(0xFF64CCC5)), Icons.Outlined.Landscape),
-    DemoPhoto("Город", listOf(Color(0xFF5C469C), Color(0xFFD4ADFC)), Icons.Outlined.LocationCity),
-    DemoPhoto("Лес", listOf(Color(0xFF1B5E20), Color(0xFF81C784)), Icons.Outlined.Forest),
-    DemoPhoto("Закат", listOf(Color(0xFFF57C00), Color(0xFFFFCC80)), Icons.Outlined.WbSunny),
-    DemoPhoto("Питомец", listOf(Color(0xFF6D4C41), Color(0xFFD7CCC8)), Icons.Outlined.Pets),
-    DemoPhoto("Цветы", listOf(Color(0xFFAD1457), Color(0xFFF8BBD0)), Icons.Outlined.LocalFlorist),
-    DemoPhoto("Побережье", listOf(Color(0xFF01579B), Color(0xFF4FC3F7)), Icons.Outlined.Landscape),
-    DemoPhoto("Улица", listOf(Color(0xFF37474F), Color(0xFF90A4AE)), Icons.Outlined.LocationCity),
-    DemoPhoto("Солнце", listOf(Color(0xFFF9A825), Color(0xFFFFF59D)), Icons.Outlined.WbSunny),
-    DemoPhoto("Парк", listOf(Color(0xFF33691E), Color(0xFFAED581)), Icons.Outlined.Forest),
-    DemoPhoto("Кадр", listOf(Color(0xFF283593), Color(0xFF9FA8DA)), Icons.Outlined.Image),
-    DemoPhoto("Букет", listOf(Color(0xFF880E4F), Color(0xFFF48FB1)), Icons.Outlined.LocalFlorist),
-)
-
-private val demoAlbums = listOf(
-    DemoAlbum("Камера", 1_234, demoPhotos[0]),
-    DemoAlbum("Скриншоты", 312, demoPhotos[10]),
-    DemoAlbum("Загрузки", 156, demoPhotos[3]),
-    DemoAlbum("Мессенджеры", 98, demoPhotos[6]),
-    DemoAlbum("Путешествия", 87, demoPhotos[2]),
-    DemoAlbum("Разное", 64, demoPhotos[4]),
-)
+import com.dlrgallery.app.data.GalleryAlbum
+import com.dlrgallery.app.data.MediaAccess
+import com.dlrgallery.app.data.MediaImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhotosScreen() {
+fun PhotosScreen(
+    uiState: GalleryUiState,
+    onRequestAccess: () -> Unit,
+    onRefresh: () -> Unit,
+    onPhotoClick: (MediaImage) -> Unit,
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { ScreenTitle("Фото") },
+            title = {
+                ScreenTitle(
+                    title = "Фото",
+                    subtitle = uiState.images.takeIf { it.isNotEmpty() }?.let { formatPhotoCount(it.size) },
+                )
+            },
             actions = {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Outlined.Search, contentDescription = "Поиск")
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Обновить фотографии")
                 }
                 IconButton(onClick = {}) {
                     Icon(Icons.Outlined.Tune, contentDescription = "Сортировка и фильтры")
@@ -114,46 +75,41 @@ fun PhotosScreen() {
             },
         )
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+        MediaAccessContent(
+            uiState = uiState,
+            emptyState = { EmptyMediaState() },
+            onRequestAccess = onRequestAccess,
+            onRetry = onRefresh,
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                DateHeader("Сегодня, 21 июля", "12 фото")
-            }
-            items(demoPhotos.take(6), key = { "today-${it.title}" }) { photo ->
-                DemoPhotoTile(photo = photo)
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                DateHeader("Вчера, 20 июля", "9 фото")
-            }
-            items(demoPhotos.drop(3).take(6), key = { "yesterday-${it.title}" }) { photo ->
-                DemoPhotoTile(photo = photo)
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                DateHeader("18 июля", "18 фото")
-            }
-            items(demoPhotos.drop(6), key = { "older-${it.title}" }) { photo ->
-                DemoPhotoTile(photo = photo)
-            }
+            PhotoGrid(
+                images = uiState.images,
+                showPartialAccessBanner = uiState.access == MediaAccess.Partial,
+                onChangeAccess = onRequestAccess,
+                onPhotoClick = onPhotoClick,
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumsScreen() {
+fun AlbumsScreen(
+    uiState: GalleryUiState,
+    onRequestAccess: () -> Unit,
+    onRefresh: () -> Unit,
+    onAlbumClick: (GalleryAlbum) -> Unit,
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { ScreenTitle("Альбомы") },
+            title = {
+                ScreenTitle(
+                    title = "Альбомы",
+                    subtitle = uiState.albums.takeIf { it.isNotEmpty() }?.let { "${it.size} альбомов" },
+                )
+            },
             actions = {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Outlined.Add, contentDescription = "Создать альбом")
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Обновить альбомы")
                 }
                 IconButton(onClick = {}) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "Другие действия")
@@ -161,16 +117,53 @@ fun AlbumsScreen() {
             },
         )
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+        MediaAccessContent(
+            uiState = uiState,
+            emptyState = { EmptyAlbumsState() },
+            onRequestAccess = onRequestAccess,
+            onRetry = onRefresh,
         ) {
-            items(demoAlbums, key = { it.name }) { album ->
-                AlbumCard(album)
-            }
+            AlbumGrid(
+                albums = uiState.albums,
+                showPartialAccessBanner = uiState.access == MediaAccess.Partial,
+                onChangeAccess = onRequestAccess,
+                onAlbumClick = onAlbumClick,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AlbumDetailScreen(
+    album: GalleryAlbum,
+    images: List<MediaImage>,
+    onBack: () -> Unit,
+    onPhotoClick: (MediaImage) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                ScreenTitle(
+                    title = album.name,
+                    subtitle = formatPhotoCount(images.size),
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
+                }
+            },
+        )
+        if (images.isEmpty()) {
+            EmptyMediaState()
+        } else {
+            PhotoGrid(
+                images = images,
+                showPartialAccessBanner = false,
+                onChangeAccess = {},
+                onPhotoClick = onPhotoClick,
+            )
         }
     }
 }
@@ -180,46 +173,47 @@ fun AlbumsScreen() {
 fun FavoritesScreen() {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { ScreenTitle("Избранное") },
+            title = { ScreenTitle(title = "Избранное") },
             actions = {
                 IconButton(onClick = {}) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "Другие действия")
                 }
             },
         )
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    modifier = Modifier.size(72.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
-                    Text(
-                        text = "Недавно добавленные",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "9 фото",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.FavoriteBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                 }
-            }
-            items(demoPhotos.take(9), key = { "favorite-${it.title}" }) { photo ->
-                DemoPhotoTile(photo = photo, favorite = true)
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                FavoriteHint()
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Избранное появится в следующей версии",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Сначала мы подключили настоящую галерею. Следующим этапом добавим отметки, базу данных и синхронизацию списка.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
@@ -227,16 +221,27 @@ fun FavoritesScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    photoCount: Int,
+    albumCount: Int,
+) {
     var saveAsCopy by rememberSaveable { mutableStateOf(true) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(title = { ScreenTitle("Настройки") })
+        TopAppBar(title = { ScreenTitle(title = "Настройки") })
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
+            item {
+                SettingsRow(
+                    icon = Icons.Outlined.Collections,
+                    title = "Медиатека",
+                    subtitle = "$photoCount фото · $albumCount альбомов",
+                )
+            }
+            item { SettingsDivider() }
             item {
                 SettingsRow(
                     icon = Icons.Outlined.Palette,
@@ -283,7 +288,7 @@ fun SettingsScreen() {
                 SettingsRow(
                     icon = Icons.Outlined.Info,
                     title = "О приложении",
-                    subtitle = "DLR Gallery 0.1.0",
+                    subtitle = "DLR Gallery 0.2.0",
                 )
             }
         }
@@ -291,149 +296,42 @@ fun SettingsScreen() {
 }
 
 @Composable
-private fun ScreenTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-    )
+private fun MediaAccessContent(
+    uiState: GalleryUiState,
+    emptyState: @Composable () -> Unit,
+    onRequestAccess: () -> Unit,
+    onRetry: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    when {
+        uiState.access == MediaAccess.None -> PermissionRequiredState(onRequestAccess)
+        uiState.isLoading && uiState.images.isEmpty() -> LoadingMediaState()
+        uiState.errorMessage != null && uiState.images.isEmpty() -> {
+            MediaErrorState(message = uiState.errorMessage, onRetry = onRetry)
+        }
+        uiState.images.isEmpty() -> emptyState()
+        else -> content()
+    }
 }
 
 @Composable
-private fun DateHeader(title: String, count: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 8.dp, end = 8.dp, top = 14.dp, bottom = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+private fun ScreenTitle(
+    title: String,
+    subtitle: String? = null,
+) {
+    Column {
         Text(
             text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
         )
-        Text(
-            text = count,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun DemoPhotoTile(
-    photo: DemoPhoto,
-    favorite: Boolean = false,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(5.dp))
-            .background(Brush.linearGradient(photo.colors)),
-    ) {
-        Icon(
-            imageVector = photo.icon,
-            contentDescription = null,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(42.dp),
-            tint = Color.White.copy(alpha = 0.78f),
-        )
-        if (favorite) {
-            Icon(
-                imageVector = Icons.Outlined.Star,
-                contentDescription = "В избранном",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(7.dp)
-                    .size(20.dp),
-                tint = Color.White,
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            text = photo.title,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.18f))
-                .padding(horizontal = 7.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun AlbumCard(album: DemoAlbum) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1.35f)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(album.cover.colors)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = album.cover.icon,
-                contentDescription = null,
-                modifier = Modifier.size(54.dp),
-                tint = Color.White.copy(alpha = 0.82f),
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = album.name,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = album.count.toString().reversed().chunked(3).joinToString(" ").reversed(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun FavoriteHint() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 32.dp, vertical = 36.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            modifier = Modifier.size(64.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.Star,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-            text = "Отмечайте лучшие кадры звездой",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Text(
-            text = "Они останутся здесь, даже если находятся в разных альбомах.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -505,7 +403,7 @@ private fun SettingsToggleRow(
 private fun SettingsIcon(icon: ImageVector) {
     Surface(
         modifier = Modifier.size(40.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
         Box(contentAlignment = Alignment.Center) {
