@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -49,15 +53,15 @@ jobs:
           git commit -m "Add Gradle wrapper"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      - name: Build debug APK
+      - name: Clean build debug APK
         id: build
         shell: bash
         run: |
           set +e
-          ./gradlew :app:assembleDebug --stacktrace --console=plain > build.log 2>&1
+          ./gradlew clean :app:assembleDebug --stacktrace --console=plain > build.log 2>&1
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          tail -n 160 build.log
+          tail -n 200 build.log
           exit 0
 
       - name: Report build failure
@@ -67,7 +71,7 @@ jobs:
           script: |
             const fs = require('fs');
             const lines = fs.readFileSync('build.log', 'utf8').split('\n');
-            const tail = lines.slice(-120).join('\n');
+            const tail = lines.slice(-140).join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -94,3 +98,42 @@ jobs:
           name: android-build-log
           path: build.log
           if-no-files-found: ignore
+
+  smoke-test:
+    name: Launch on API ${{ matrix.api-level }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 35]
+
+    steps:
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: dlr-gallery-debug
+          path: artifacts
+
+      - name: Boot emulator and launch app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install -r artifacts/app-debug.apk
+            adb shell am force-stop com.dlrgallery.app
+            adb shell am start -W -n com.dlrgallery.app/.MainActivity
+            sleep 3
+            adb shell pidof com.dlrgallery.app
