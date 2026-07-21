@@ -74,11 +74,17 @@ fun DLRGalleryApp(
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var trashOpen by rememberSaveable { mutableStateOf(false) }
+    var organizerOpen by rememberSaveable { mutableStateOf(false) }
     var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
 
-    val requestDelete = rememberMediaDeleteRequester(
+    val trashController = rememberMediaTrashController(
         onFinished = galleryViewModel::refresh,
     )
+    val organizationController = rememberMediaOrganizationController(
+        onFinished = galleryViewModel::refresh,
+    )
+    val requestDelete = trashController.moveToTrash
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -139,9 +145,11 @@ fun DLRGalleryApp(
         selectedPhotoId = image.id
     }
 
-    LaunchedEffect(uiState.images, uiState.isLoading, uiState.access) {
+    LaunchedEffect(uiState.images, uiState.trashedImages, uiState.isLoading, uiState.access) {
         if (!uiState.isLoading && uiState.access == MediaAccess.Full) {
-            favoritesViewModel.removeMissingImages(uiState.images.mapTo(mutableSetOf(), MediaImage::id))
+            val existingIds = (uiState.images + uiState.trashedImages)
+                .mapTo(mutableSetOf(), MediaImage::id)
+            favoritesViewModel.removeMissingImages(existingIds)
         }
     }
     LaunchedEffect(uiState.albums, selectedAlbumId) {
@@ -178,6 +186,32 @@ fun DLRGalleryApp(
                 editorPhotoId = null
                 galleryViewModel.refresh()
             },
+        )
+        return
+    }
+
+    if (trashOpen) {
+        BackHandler { trashOpen = false }
+        TrashScreen(
+            images = uiState.trashedImages,
+            gridColumns = settings.gridSize.columns,
+            onBack = { trashOpen = false },
+            onRestore = trashController.restore,
+            onDeletePermanently = trashController.deletePermanently,
+        )
+        return
+    }
+
+    if (organizerOpen) {
+        BackHandler { organizerOpen = false }
+        MediaOrganizerScreen(
+            images = uiState.images,
+            albums = uiState.albums,
+            gridColumns = settings.gridSize.columns,
+            isBusy = organizationController.isBusy,
+            onBack = { organizerOpen = false },
+            onMove = organizationController.moveToAlbum,
+            onCopy = organizationController.copyToAlbum,
         )
         return
     }
@@ -274,6 +308,8 @@ fun DLRGalleryApp(
                     uiState = uiState,
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
+                    onManageAlbums = { organizerOpen = true },
+                    onOpenTrash = { trashOpen = true },
                     onAlbumClick = { selectedAlbumId = it.id },
                 )
                 GalleryDestination.Favorites -> FavoriteGalleryScreen(
