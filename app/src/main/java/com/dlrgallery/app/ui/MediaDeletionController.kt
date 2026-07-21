@@ -67,6 +67,19 @@ fun rememberMediaTrashController(
         onFinished()
     }
 
+    suspend fun commitDeletedOriginal(stage: StagedLocalTrashEntry): Boolean = try {
+        localTrashRepository.commit(stage)
+        legacyStage = null
+        legacyQueue = legacyQueue.drop(1)
+        true
+    } catch (error: Throwable) {
+        stopLegacyMove(
+            error.message ?: "Оригинал удалён, но завершение корзины прервалось. Копия сохранена.",
+            discardStage = false,
+        )
+        false
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
@@ -93,15 +106,14 @@ fun rememberMediaTrashController(
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { resolver.delete(uri, null, null) }
-                localTrashRepository.commit(stage)
-                legacyStage = null
-                legacyQueue = legacyQueue.drop(1)
             } catch (error: Throwable) {
                 stopLegacyMove(
-                    error.message ?: "Не удалось переместить файл в корзину",
+                    error.message ?: "Не удалось удалить оригинал после подтверждения",
                     discardStage = true,
                 )
+                return@launch
             }
+            commitDeletedOriginal(stage)
         }
     }
 
@@ -138,9 +150,6 @@ fun rememberMediaTrashController(
 
         try {
             withContext(Dispatchers.IO) { resolver.delete(image.uri, null, null) }
-            localTrashRepository.commit(stage)
-            legacyStage = null
-            legacyQueue = legacyQueue.drop(1)
         } catch (security: RecoverableSecurityException) {
             if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
                 legacyPermissionUri = image.uri
@@ -152,12 +161,16 @@ fun rememberMediaTrashController(
             } else {
                 stopLegacyMove("Android не разрешил удалить оригинал", discardStage = true)
             }
+            return@LaunchedEffect
         } catch (error: Throwable) {
             stopLegacyMove(
                 error.message ?: "Не удалось удалить оригинал после резервного копирования",
                 discardStage = true,
             )
+            return@LaunchedEffect
         }
+
+        commitDeletedOriginal(stage)
     }
 
     fun launchSystemAction(action: SystemMediaAction, images: List<MediaImage>) {
