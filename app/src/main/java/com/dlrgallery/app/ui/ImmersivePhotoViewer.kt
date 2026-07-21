@@ -29,6 +29,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.dlrgallery.app.data.MediaImage
+import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
 
@@ -72,6 +74,7 @@ fun ImmersivePhotoViewer(
     initialPhotoId: Long,
     favoriteIds: Set<Long>,
     onToggleFavorite: (Long) -> Unit,
+    onEdit: (MediaImage) -> Unit,
     onBack: () -> Unit,
 ) {
     if (images.isEmpty()) {
@@ -193,7 +196,7 @@ fun ImmersivePhotoViewer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -210,6 +213,11 @@ fun ImmersivePhotoViewer(
                                 Intent.createChooser(shareIntent, "Поделиться фото"),
                             )
                         },
+                    )
+                    ViewerAction(
+                        icon = Icons.Outlined.Edit,
+                        label = "Изменить",
+                        onClick = { onEdit(currentImage) },
                     )
                     ViewerAction(
                         icon = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -259,8 +267,13 @@ private fun ZoomablePhoto(
                 detectTapGestures(
                     onTap = { onTap() },
                     onDoubleTap = {
-                        scale = if (scale > 1.01f) 1f else 2.5f
-                        offset = Offset.Zero
+                        if (scale > 1.01f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                            offset = Offset.Zero
+                        }
                     },
                 )
             }
@@ -272,7 +285,9 @@ private fun ZoomablePhoto(
                         val pressedPointers = event.changes.count { it.pressed }
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
-                        val shouldTransform = pressedPointers > 1 || scale > 1.01f
+                        val isPinching = pressedPointers > 1 && abs(zoomChange - 1f) > 0.0001f
+                        val isPanning = scale > 1.01f && panChange.getDistance() > 1f
+                        val shouldTransform = pressedPointers > 1 || isPinching || isPanning
 
                         if (shouldTransform) {
                             val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
@@ -331,7 +346,7 @@ private fun ViewerAction(
     Column(
         modifier = Modifier
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
