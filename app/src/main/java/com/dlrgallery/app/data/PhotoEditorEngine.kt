@@ -14,12 +14,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class CropPreset(
     val label: String,
@@ -52,6 +52,7 @@ suspend fun exportEditedCopy(
     context: Context,
     image: MediaImage,
     adjustments: PhotoAdjustments,
+    jpegQuality: Int,
 ): Uri = withContext(Dispatchers.IO) {
     val source = decodeBitmap(context, image.uri, maxSide = 4_096)
     var transformed: Bitmap? = null
@@ -62,7 +63,7 @@ suspend fun exportEditedCopy(
         transformed = rotateAndFlip(source, adjustments)
         cropped = cropToPreset(transformed, adjustments.cropPreset)
         filtered = applyColorAdjustments(cropped, adjustments)
-        saveBitmapCopy(context, filtered)
+        saveBitmapCopy(context, filtered, jpegQuality)
     } finally {
         if (filtered != null && filtered !== cropped && !filtered.isRecycled) filtered.recycle()
         if (cropped != null && cropped !== transformed && !cropped.isRecycled) cropped.recycle()
@@ -236,6 +237,7 @@ private fun createColorMatrix(adjustments: PhotoAdjustments): ColorMatrix {
 private fun saveBitmapCopy(
     context: Context,
     bitmap: Bitmap,
+    jpegQuality: Int,
 ): Uri {
     val resolver = context.contentResolver
     val fileName = "DLR_${System.currentTimeMillis()}.jpg"
@@ -270,7 +272,7 @@ private fun saveBitmapCopy(
 
     try {
         resolver.openOutputStream(uri, "w")?.use { stream ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) {
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality.coerceIn(1, 100), stream)) {
                 throw IOException("Не удалось записать JPEG")
             }
         } ?: throw IOException("Не удалось открыть файл для записи")
