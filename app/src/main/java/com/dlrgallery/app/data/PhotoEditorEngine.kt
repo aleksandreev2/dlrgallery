@@ -16,6 +16,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -252,6 +253,15 @@ private fun saveBitmapCopy(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/DLR Gallery")
             put(MediaStore.Images.Media.IS_PENDING, 1)
+        } else {
+            val directory = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "DLR Gallery",
+            )
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw IOException("Не удалось создать папку DLR Gallery")
+            }
+            put(MediaStore.Images.Media.DATA, File(directory, fileName).absolutePath)
         }
     }
 
