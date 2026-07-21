@@ -178,9 +178,21 @@ class MediaStoreRepository(
             val bucketNameColumn = mediaCursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
             val mimeTypeColumn = mediaCursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
             val durationColumn = durationColumnName?.let(mediaCursor::getColumnIndex)
-            val relativePathColumn = mediaCursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
-            val trashedColumn = mediaCursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED)
-            val expiresColumn = mediaCursor.getColumnIndex(MediaStore.MediaColumns.DATE_EXPIRES)
+            val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                mediaCursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+            } else {
+                -1
+            }
+            val trashedColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                mediaCursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED)
+            } else {
+                -1
+            }
+            val expiresColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                mediaCursor.getColumnIndex(MediaStore.MediaColumns.DATE_EXPIRES)
+            } else {
+                -1
+            }
 
             while (mediaCursor.moveToNext()) {
                 result += mediaCursor.toMediaImage(
