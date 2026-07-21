@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 
-/** User-facing ordering for photo collections. */
+/** User-facing ordering for media collections. */
 enum class MediaSortOrder(val label: String) {
     Newest("Сначала новые"),
     Oldest("Сначала старые"),
@@ -13,11 +13,13 @@ enum class MediaSortOrder(val label: String) {
 }
 
 enum class MediaTypeFilter(val label: String) {
-    All("Все форматы"),
+    All("Все"),
+    Photos("Фото"),
+    Videos("Видео"),
     Jpeg("JPEG"),
     Png("PNG"),
     Webp("WebP"),
-    Other("Другие"),
+    Other("Другие фото"),
 }
 
 enum class MediaDateFilter(val label: String) {
@@ -92,16 +94,19 @@ private fun matchesType(image: MediaImage, filter: MediaTypeFilter): Boolean {
 
     val mime = image.mimeType.lowercase(Locale.ROOT)
     val name = image.displayName.lowercase(Locale.ROOT)
-    val isJpeg = mime == "image/jpeg" || name.endsWith(".jpg") || name.endsWith(".jpeg")
-    val isPng = mime == "image/png" || name.endsWith(".png")
-    val isWebp = mime == "image/webp" || name.endsWith(".webp")
+    val isVideo = image.isVideo || mime.startsWith("video/")
+    val isJpeg = !isVideo && (mime == "image/jpeg" || name.endsWith(".jpg") || name.endsWith(".jpeg"))
+    val isPng = !isVideo && (mime == "image/png" || name.endsWith(".png"))
+    val isWebp = !isVideo && (mime == "image/webp" || name.endsWith(".webp"))
 
     return when (filter) {
         MediaTypeFilter.All -> true
+        MediaTypeFilter.Photos -> !isVideo
+        MediaTypeFilter.Videos -> isVideo
         MediaTypeFilter.Jpeg -> isJpeg
         MediaTypeFilter.Png -> isPng
         MediaTypeFilter.Webp -> isWebp
-        MediaTypeFilter.Other -> !isJpeg && !isPng && !isWebp
+        MediaTypeFilter.Other -> !isVideo && !isJpeg && !isPng && !isWebp
     }
 }
 
