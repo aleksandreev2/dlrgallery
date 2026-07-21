@@ -1,6 +1,5 @@
 package com.dlrgallery.app.ui
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,34 +20,24 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,24 +50,30 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.ln
-import kotlin.math.pow
 
 @Composable
 fun PhotoGrid(
     images: List<MediaImage>,
+    gridColumns: Int,
     showPartialAccessBanner: Boolean,
     onChangeAccess: () -> Unit,
     onPhotoClick: (MediaImage) -> Unit,
 ) {
     val groups = remember(images) { groupPhotosByDay(images) }
+    val columns = gridColumns.coerceIn(2, 5)
+    val spacing = if (columns >= 5) 2.dp else 3.dp
+    val sidePadding = if (columns >= 4) 4.dp else 6.dp
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+        columns = GridCells.Fixed(columns),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 6.dp, end = 6.dp, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        contentPadding = PaddingValues(
+            start = sidePadding,
+            end = sidePadding,
+            bottom = 24.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+        verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         if (showPartialAccessBanner) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -129,9 +124,7 @@ fun AlbumGrid(
 }
 
 @Composable
-fun PermissionRequiredState(
-    onRequestAccess: () -> Unit,
-) {
+fun PermissionRequiredState(onRequestAccess: () -> Unit) {
     MessageState(
         icon = Icons.Outlined.Lock,
         title = "Нужен доступ к фотографиям",
@@ -195,92 +188,6 @@ fun MediaErrorState(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PhotoViewerScreen(
-    image: MediaImage,
-    onBack: () -> Unit,
-) {
-    val context = LocalContext.current
-
-    Scaffold(
-        containerColor = Color.Black,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = image.displayName.ifBlank { "Фотография" },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = image.mimeType.ifBlank { "image/*" }
-                                putExtra(Intent.EXTRA_STREAM, image.uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Поделиться фото"))
-                        },
-                    ) {
-                        Icon(Icons.Outlined.Share, contentDescription = "Поделиться")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black.copy(alpha = 0.88f),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White,
-                ),
-            )
-        },
-        bottomBar = {
-            Surface(color = Color.Black.copy(alpha = 0.9f)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Info,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.76f),
-                    )
-                    Column(modifier = Modifier.padding(start = 12.dp)) {
-                        Text(
-                            text = "${image.width} × ${image.height}",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = formatFileSize(image.sizeBytes),
-                            color = Color.White.copy(alpha = 0.68f),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        },
-    ) { padding ->
-        AsyncImage(
-            model = image.uri,
-            contentDescription = image.displayName,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentScale = ContentScale.Fit,
-        )
-    }
-}
-
 @Composable
 private fun PhotoTile(
     image: MediaImage,
@@ -340,9 +247,7 @@ private fun AlbumCard(
 }
 
 @Composable
-private fun PartialAccessBanner(
-    onChangeAccess: () -> Unit,
-) {
+private fun PartialAccessBanner(onChangeAccess: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -477,26 +382,5 @@ private fun formatDateHeader(date: LocalDate): String {
     }
 }
 
-fun formatPhotoCount(count: Int): String {
-    val lastTwo = count % 100
-    val last = count % 10
-    val word = when {
-        lastTwo in 11..14 -> "фото"
-        last == 1 -> "фото"
-        last in 2..4 -> "фото"
-        else -> "фото"
-    }
-    return "${count.toString().reversed().chunked(3).joinToString(" ").reversed()} $word"
-}
-
-private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0L) return "Неизвестный размер"
-    val units = arrayOf("Б", "КБ", "МБ", "ГБ")
-    val unitIndex = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(0, units.lastIndex)
-    val value = bytes / 1024.0.pow(unitIndex.toDouble())
-    return if (unitIndex == 0) {
-        "${bytes} ${units[unitIndex]}"
-    } else {
-        String.format(Locale.getDefault(), "%.1f %s", value, units[unitIndex])
-    }
-}
+fun formatPhotoCount(count: Int): String =
+    "${count.toString().reversed().chunked(3).joinToString(" ").reversed()} фото"
