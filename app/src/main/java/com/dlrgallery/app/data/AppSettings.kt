@@ -30,4 +30,5 @@ data class AppSettings(
     val gridSize: GalleryGridSize = GalleryGridSize.Normal,
     val exportQuality: ExportQuality = ExportQuality.High,
     val saveAsCopy: Boolean = true,
+    val mediaSortOrder: MediaSortOrder = MediaSortOrder.Newest,
 )

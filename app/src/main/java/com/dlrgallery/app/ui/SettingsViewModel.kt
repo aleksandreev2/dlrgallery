@@ -8,6 +8,7 @@ import com.dlrgallery.app.data.AppSettingsRepository
 import com.dlrgallery.app.data.AppThemeMode
 import com.dlrgallery.app.data.ExportQuality
 import com.dlrgallery.app.data.GalleryGridSize
+import com.dlrgallery.app.data.MediaSortOrder
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -36,5 +37,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setSaveAsCopy(value: Boolean) {
         viewModelScope.launch { repository.setSaveAsCopy(value) }
+    }
+
+    fun setMediaSortOrder(value: MediaSortOrder) {
+        viewModelScope.launch { repository.setMediaSortOrder(value) }
     }
 }

@@ -30,6 +30,8 @@ class AppSettingsRepository(context: Context) {
                 exportQuality = preferences[EXPORT_QUALITY]
                     .toEnumOrDefault(ExportQuality.High),
                 saveAsCopy = preferences[SAVE_AS_COPY] ?: true,
+                mediaSortOrder = preferences[MEDIA_SORT_ORDER]
+                    .toEnumOrDefault(MediaSortOrder.Newest),
             )
         }
 
@@ -49,6 +51,10 @@ class AppSettingsRepository(context: Context) {
         dataStore.edit { it[SAVE_AS_COPY] = value }
     }
 
+    suspend fun setMediaSortOrder(value: MediaSortOrder) {
+        dataStore.edit { it[MEDIA_SORT_ORDER] = value.name }
+    }
+
     private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =
         enumValues<T>().firstOrNull { it.name == this } ?: default
 
@@ -57,5 +63,6 @@ class AppSettingsRepository(context: Context) {
         val GRID_SIZE = stringPreferencesKey("gallery_grid_size")
         val EXPORT_QUALITY = stringPreferencesKey("export_quality")
         val SAVE_AS_COPY = booleanPreferencesKey("save_as_copy")
+        val MEDIA_SORT_ORDER = stringPreferencesKey("media_sort_order")
     }
 }
