@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.dlrgallery.app.data.AppThemeMode
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF2864D7),
@@ -38,9 +39,15 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun DLRGalleryTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.System,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themeMode) {
+        AppThemeMode.System -> isSystemInDarkTheme()
+        AppThemeMode.Light -> false
+        AppThemeMode.Dark -> true
+    }
+
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = Typography(),
