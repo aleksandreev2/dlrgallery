@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
-import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sort
@@ -111,7 +110,6 @@ fun AlbumsBrowserScreen(
     onRequestAccess: () -> Unit,
     onRefresh: () -> Unit,
     onManageAlbums: () -> Unit,
-    onOpenTrash: () -> Unit,
     onAlbumClick: (GalleryAlbum) -> Unit,
 ) {
     var searchVisible by rememberSaveable { mutableStateOf(false) }
@@ -152,17 +150,6 @@ fun AlbumsBrowserScreen(
                 }
             },
             actions = {
-                IconButton(onClick = onOpenTrash) {
-                    Icon(
-                        Icons.Outlined.DeleteSweep,
-                        contentDescription = "Корзина",
-                        tint = if (uiState.trashedImages.isNotEmpty()) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
                 IconButton(onClick = onManageAlbums) {
                     Icon(
                         Icons.Outlined.CreateNewFolder,
