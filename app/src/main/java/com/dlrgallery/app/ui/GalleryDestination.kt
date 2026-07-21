@@ -2,10 +2,12 @@ package com.dlrgallery.app.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
@@ -30,6 +32,11 @@ enum class GalleryDestination(
         label = "Избранное",
         selectedIcon = Icons.Filled.Favorite,
         unselectedIcon = Icons.Outlined.FavoriteBorder,
+    ),
+    Trash(
+        label = "Корзина",
+        selectedIcon = Icons.Filled.Delete,
+        unselectedIcon = Icons.Outlined.DeleteOutline,
     ),
     Settings(
         label = "Настройки",
