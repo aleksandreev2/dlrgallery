@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -62,7 +63,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.dlrgallery.app.data.MediaImage
-import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
 
@@ -261,7 +261,12 @@ private fun ZoomablePhoto(
         modifier = Modifier
             .fillMaxSize()
             .clipToBounds()
-            .onSizeChanged { containerSize = it }
+            .onSizeChanged { newSize ->
+                containerSize = newSize
+                if (scale > 1.01f) {
+                    offset = clampOffset(offset, scale, newSize)
+                }
+            }
             .pointerInput(image.id, active) {
                 detectTapGestures(
                     onTap = { onSingleTap() },
@@ -275,7 +280,7 @@ private fun ZoomablePhoto(
                     },
                 )
             }
-            .pointerInput(image.id, scale, containerSize) {
+            .pointerInput(image.id, active) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
@@ -283,23 +288,37 @@ private fun ZoomablePhoto(
                         val pressedPointers = event.changes.count { it.pressed }
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
-                        val isPinching = pressedPointers > 1 && abs(zoomChange - 1f) > 0.0001f
-                        val isPanning = scale > 1.01f && panChange.getDistance() > 0.5f
-                        val shouldTransform = pressedPointers > 1 || isPinching || isPanning
+                        val multiTouch = pressedPointers > 1
+                        val panningZoomedImage = scale > 1.01f && panChange.getDistance() > 0.5f
 
-                        if (shouldTransform) {
-                            val calculatedScale = (scale * zoomChange).coerceIn(1f, 5f)
+                        if (multiTouch || panningZoomedImage) {
+                            val oldScale = scale
+                            val calculatedScale = (oldScale * zoomChange).coerceIn(1f, 5f)
                             val nextScale = if (calculatedScale <= 1.01f) 1f else calculatedScale
-                            scale = nextScale
+
                             offset = if (nextScale == 1f) {
                                 Offset.Zero
                             } else {
+                                val centroid = event.calculateCentroid()
+                                val viewportCenter = Offset(
+                                    x = containerSize.width / 2f,
+                                    y = containerSize.height / 2f,
+                                )
+                                val scaleRatio = nextScale / oldScale
+                                val focalPoint = centroid - viewportCenter
+                                val zoomAdjustedOffset = if (multiTouch && nextScale != oldScale) {
+                                    offset * scaleRatio + focalPoint * (1f - scaleRatio)
+                                } else {
+                                    offset
+                                }
+
                                 clampOffset(
-                                    value = offset + panChange,
+                                    value = zoomAdjustedOffset + panChange,
                                     scale = nextScale,
                                     size = containerSize,
                                 )
                             }
+                            scale = nextScale
                             event.changes.forEach { change -> change.consume() }
                         }
                     } while (event.changes.any { it.pressed })
