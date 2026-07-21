@@ -14,18 +14,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.RestoreFromTrash
 import androidx.compose.material3.AlertDialog
@@ -33,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,59 +58,66 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dlrgallery.app.data.MediaImage
+import coil3.compose.AsyncImage
+import com.dlrgallery.app.data.TrashItem
 import java.time.Duration
 import java.time.Instant
-
+import kotlin.math.ln
+import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrashScreen(
-    images: List<MediaImage>,
+    items: List<TrashItem>,
     gridColumns: Int,
-    onBack: () -> Unit,
-    onRestore: (List<MediaImage>) -> Unit,
-    onDeletePermanently: (List<MediaImage>) -> Unit,
+    isBusy: Boolean,
+    onRestore: (List<TrashItem>) -> Unit,
+    onDeletePermanently: (List<TrashItem>) -> Unit,
 ) {
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    var permanentDeleteItems by remember { mutableStateOf<List<MediaImage>>(emptyList()) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var permanentDeleteItems by remember { mutableStateOf<List<TrashItem>>(emptyList()) }
     var showEmptyTrashDialog by rememberSaveable { mutableStateOf(false) }
-    val selectionMode = selectedIds.isNotEmpty()
-    val selectedImages = remember(images, selectedIds) {
-        images.filter { it.id in selectedIds }
+    val selectionMode = selectedKeys.isNotEmpty()
+    val selectedItems = remember(items, selectedKeys) {
+        items.filter { it.key in selectedKeys }
     }
+    val totalSize = remember(items) { items.sumOf(TrashItem::sizeBytes) }
 
-    LaunchedEffect(images) {
-        val validIds = images.mapTo(mutableSetOf(), MediaImage::id)
-        selectedIds = selectedIds.intersect(validIds)
+    LaunchedEffect(items) {
+        val validKeys = items.mapTo(mutableSetOf(), TrashItem::key)
+        selectedKeys = selectedKeys.intersect(validKeys)
     }
-    BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
+    BackHandler(enabled = selectionMode) { selectedKeys = emptySet() }
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectionMode) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Выбрано: ${selectedIds.size}",
+                        text = "Выбрано: ${selectedKeys.size}",
                         fontWeight = FontWeight.SemiBold,
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { selectedIds = emptySet() }) {
+                    IconButton(onClick = { selectedKeys = emptySet() }) {
                         Icon(Icons.Outlined.Close, contentDescription = "Снять выделение")
                     }
                 },
                 actions = {
                     IconButton(
+                        enabled = !isBusy,
                         onClick = {
-                            val items = selectedImages
-                            selectedIds = emptySet()
-                            onRestore(items)
+                            val selected = selectedItems
+                            selectedKeys = emptySet()
+                            onRestore(selected)
                         },
                     ) {
                         Icon(Icons.Outlined.Restore, contentDescription = "Восстановить")
                     }
-                    IconButton(onClick = { permanentDeleteItems = selectedImages }) {
+                    IconButton(
+                        enabled = !isBusy,
+                        onClick = { permanentDeleteItems = selectedItems },
+                    ) {
                         Icon(Icons.Outlined.DeleteForever, contentDescription = "Удалить навсегда")
                     }
                 },
@@ -120,28 +131,29 @@ fun TrashScreen(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
-                        if (images.isNotEmpty()) {
+                        if (items.isNotEmpty()) {
                             Text(
-                                text = "${formatTrashCount(images.size)} · хранение до 30 дней",
+                                text = "${formatTrashCount(items.size)} · ${formatTrashSize(totalSize)} · до 30 дней",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
-                    }
-                },
                 actions = {
-                    if (images.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    if (items.isNotEmpty()) {
                         IconButton(
-                            onClick = { onRestore(images) },
+                            enabled = !isBusy,
+                            onClick = { onRestore(items) },
                         ) {
                             Icon(Icons.Outlined.RestoreFromTrash, contentDescription = "Восстановить всё")
                         }
-                        IconButton(onClick = { showEmptyTrashDialog = true }) {
+                        IconButton(
+                            enabled = !isBusy,
+                            onClick = { showEmptyTrashDialog = true },
+                        ) {
                             Icon(Icons.Outlined.DeleteSweep, contentDescription = "Очистить корзину")
                         }
                     }
@@ -149,18 +161,22 @@ fun TrashScreen(
             )
         }
 
-        when {
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> UnsupportedTrashState()
-            images.isEmpty() -> EmptyTrashState()
-            else -> TrashGrid(
-                images = images,
+        if (isBusy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (items.isEmpty()) {
+            EmptyTrashState()
+        } else {
+            TrashGrid(
+                items = items,
                 gridColumns = gridColumns,
-                selectedIds = selectedIds,
-                onToggle = { image ->
-                    selectedIds = if (image.id in selectedIds) {
-                        selectedIds - image.id
+                selectedKeys = selectedKeys,
+                onToggle = { item ->
+                    selectedKeys = if (item.key in selectedKeys) {
+                        selectedKeys - item.key
                     } else {
-                        selectedIds + image.id
+                        selectedKeys + item.key
                     }
                 },
             )
@@ -172,22 +188,22 @@ fun TrashScreen(
             count = permanentDeleteItems.size,
             onDismiss = { permanentDeleteItems = emptyList() },
             onConfirm = {
-                val items = permanentDeleteItems
+                val selected = permanentDeleteItems
                 permanentDeleteItems = emptyList()
-                selectedIds = emptySet()
-                onDeletePermanently(items)
+                selectedKeys = emptySet()
+                onDeletePermanently(selected)
             },
         )
     }
 
     if (showEmptyTrashDialog) {
         PermanentDeleteDialog(
-            count = images.size,
+            count = items.size,
             emptyTrash = true,
             onDismiss = { showEmptyTrashDialog = false },
             onConfirm = {
                 showEmptyTrashDialog = false
-                onDeletePermanently(images)
+                onDeletePermanently(items)
             },
         )
     }
@@ -195,10 +211,10 @@ fun TrashScreen(
 
 @Composable
 private fun TrashGrid(
-    images: List<MediaImage>,
+    items: List<TrashItem>,
     gridColumns: Int,
-    selectedIds: Set<Long>,
-    onToggle: (MediaImage) -> Unit,
+    selectedKeys: Set<String>,
+    onToggle: (TrashItem) -> Unit,
 ) {
     val columns = gridColumns.coerceIn(2, 5)
     val spacing = if (columns >= 5) 2.dp else 4.dp
@@ -209,11 +225,44 @@ private fun TrashGrid(
         horizontalArrangement = Arrangement.spacedBy(spacing),
         verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
-        items(images, key = MediaImage::id) { image ->
+        item(key = "trash-info", span = { GridItemSpan(maxLineSpan) }) {
+            TrashInfoBanner()
+        }
+        items(items, key = TrashItem::key) { item ->
             TrashTile(
-                image = image,
-                selected = image.id in selectedIds,
-                onToggle = { onToggle(image) },
+                item = item,
+                selected = item.key in selectedKeys,
+                onToggle = { onToggle(item) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrashInfoBanner() {
+    val legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+            Text(
+                text = if (legacy) "Локальная корзина DLR Gallery" else "Системная корзина Android",
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                text = if (legacy) {
+                    "Оригинал удаляется только после создания безопасной копии. При удалении приложения содержимое этой корзины также исчезнет."
+                } else {
+                    "Файлы хранятся в системной корзине устройства и автоматически удаляются Android."
+                },
+                modifier = Modifier.padding(top = 3.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
             )
         }
     }
@@ -222,10 +271,12 @@ private fun TrashGrid(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrashTile(
-    image: MediaImage,
+    item: TrashItem,
     selected: Boolean,
     onToggle: () -> Unit,
 ) {
+    var previewFailed by remember(item.key) { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -234,12 +285,63 @@ private fun TrashTile(
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .combinedClickable(onClick = onToggle, onLongClick = onToggle),
     ) {
-        MediaThumbnail(
-            image = image,
-            contentDescription = image.displayName,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
+        val systemMedia = item.systemMedia
+        when {
+            systemMedia != null -> MediaThumbnail(
+                image = systemMedia,
+                contentDescription = item.displayName,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            previewFailed -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.BrokenImage,
+                    contentDescription = "Не удалось загрузить превью",
+                    modifier = Modifier.size(30.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> AsyncImage(
+                model = item.previewUri,
+                contentDescription = item.displayName,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = { previewFailed = true },
+            )
+        }
+
+        if (item.isVideo) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp),
+                color = Color.Black.copy(alpha = 0.68f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.PlayArrow,
+                        contentDescription = "Видео",
+                        modifier = Modifier.size(15.dp),
+                        tint = Color.White,
+                    )
+                    if (item.durationMillis > 0L) {
+                        Text(
+                            text = formatTrashDuration(item.durationMillis),
+                            modifier = Modifier.padding(start = 3.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
+        }
 
         Surface(
             modifier = Modifier
@@ -249,7 +351,7 @@ private fun TrashTile(
             shape = RoundedCornerShape(8.dp),
         ) {
             Text(
-                text = formatExpiration(image.dateExpiresMillis),
+                text = formatExpiration(item.dateExpiresMillis),
                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall,
@@ -279,28 +381,6 @@ private fun TrashTile(
 
 @Composable
 private fun EmptyTrashState() {
-    TrashMessageState(
-        icon = Icons.Outlined.DeleteSweep,
-        title = "Корзина пуста",
-        message = "Удалённые через DLR Gallery файлы будут временно появляться здесь.",
-    )
-}
-
-@Composable
-private fun UnsupportedTrashState() {
-    TrashMessageState(
-        icon = Icons.Outlined.DeleteSweep,
-        title = "Системная корзина недоступна",
-        message = "Android 10 и более старые версии удаляют медиафайлы без системного восстановления. Корзина поддерживается начиная с Android 11.",
-    )
-}
-
-@Composable
-private fun TrashMessageState(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    message: String,
-) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -315,22 +395,22 @@ private fun TrashMessageState(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = icon,
+                        imageVector = Icons.Outlined.DeleteSweep,
                         contentDescription = null,
                         modifier = Modifier.size(34.dp),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
-            Spacer(modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             Text(
-                text = title,
+                text = "Корзина пуста",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = message,
+                text = "Удалённые через DLR Gallery фотографии и видео будут храниться здесь до 30 дней.",
                 modifier = Modifier.padding(top = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -389,4 +469,19 @@ private fun formatTrashCount(count: Int): String = when {
     count % 10 == 1 && count % 100 != 11 -> "$count файл"
     count % 10 in 2..4 && count % 100 !in 12..14 -> "$count файла"
     else -> "$count файлов"
+}
+
+private fun formatTrashSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 Б"
+    val units = listOf("Б", "КБ", "МБ", "ГБ")
+    val group = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(units.indices)
+    val value = bytes / 1024.0.pow(group.toDouble())
+    return if (group == 0) "${value.toInt()} ${units[group]}" else "%.1f %s".format(value, units[group])
+}
+
+private fun formatTrashDuration(milliseconds: Long): String {
+    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "%d:%02d".format(minutes, seconds)
 }
