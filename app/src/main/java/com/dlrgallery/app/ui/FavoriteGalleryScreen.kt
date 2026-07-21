@@ -29,6 +29,7 @@ import com.dlrgallery.app.data.MediaImage
 fun FavoriteGalleryScreen(
     allImages: List<MediaImage>,
     favoriteIds: Set<Long>,
+    gridColumns: Int,
     onPhotoClick: (MediaImage) -> Unit,
 ) {
     val favoriteImages = remember(allImages, favoriteIds) {
@@ -60,6 +61,7 @@ fun FavoriteGalleryScreen(
         } else {
             PhotoGrid(
                 images = favoriteImages,
+                gridColumns = gridColumns,
                 showPartialAccessBanner = false,
                 onChangeAccess = {},
                 onPhotoClick = onPhotoClick,
