@@ -38,12 +38,20 @@ fun FavoriteGalleryScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                ScreenTitle(
-                    title = "Избранное",
-                    subtitle = favoriteImages
-                        .takeIf(List<MediaImage>::isNotEmpty)
-                        ?.let { formatPhotoCount(it.size) },
-                )
+                Column {
+                    Text(
+                        text = "Избранное",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (favoriteImages.isNotEmpty()) {
+                        Text(
+                            text = formatPhotoCount(favoriteImages.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             },
         )
 
