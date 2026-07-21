@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -113,9 +112,6 @@ fun PhotoEditorScreen(
         }
     }
 
-    val colorFilter = remember(adjustments) {
-        ColorFilter.colorMatrix(ColorMatrix(editorColorMatrixValues(adjustments)))
-    }
     val defaultAdjustments = remember { PhotoAdjustments() }
 
     Scaffold(
