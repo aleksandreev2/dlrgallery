@@ -42,6 +42,7 @@ fun DLRGalleryApp(
     var destination by rememberSaveable { mutableStateOf(GalleryDestination.Photos) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -70,6 +71,9 @@ fun DLRGalleryApp(
     val viewerImages = remember(uiState.images, viewerImageIds) {
         val imagesById = uiState.images.associateBy(MediaImage::id)
         viewerImageIds.mapNotNull(imagesById::get)
+    }
+    val editorPhoto = remember(uiState.images, editorPhotoId) {
+        editorPhotoId?.let { id -> uiState.images.firstOrNull { it.id == id } }
     }
 
     fun openViewer(image: MediaImage, source: List<MediaImage>) {
@@ -101,6 +105,24 @@ fun DLRGalleryApp(
             closeViewer()
         }
     }
+    LaunchedEffect(editorPhotoId, editorPhoto, uiState.isLoading) {
+        if (editorPhotoId != null && editorPhoto == null && !uiState.isLoading) {
+            editorPhotoId = null
+        }
+    }
+
+    if (editorPhoto != null) {
+        BackHandler { editorPhotoId = null }
+        PhotoEditorScreen(
+            image = editorPhoto,
+            onBack = { editorPhotoId = null },
+            onSaved = {
+                editorPhotoId = null
+                galleryViewModel.refresh()
+            },
+        )
+        return
+    }
 
     val activePhotoId = selectedPhotoId
     if (activePhotoId != null && viewerImages.isNotEmpty()) {
@@ -110,6 +132,7 @@ fun DLRGalleryApp(
             initialPhotoId = activePhotoId,
             favoriteIds = favoriteIds,
             onToggleFavorite = favoritesViewModel::toggleFavorite,
+            onEdit = { image -> editorPhotoId = image.id },
             onBack = ::closeViewer,
         )
         return
