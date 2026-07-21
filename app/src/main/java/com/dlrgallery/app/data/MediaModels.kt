@@ -13,6 +13,9 @@ data class MediaImage(
     val bucketId: Long,
     val bucketName: String,
     val mimeType: String,
+    val mediaStoreId: Long = id,
+    val isVideo: Boolean = false,
+    val durationMillis: Long = 0L,
 )
 
 data class GalleryAlbum(
@@ -21,4 +24,6 @@ data class GalleryAlbum(
     val coverUri: Uri,
     val imageCount: Int,
     val latestImageMillis: Long,
+    val coverMediaStoreId: Long = 0L,
+    val coverIsVideo: Boolean = false,
 )
