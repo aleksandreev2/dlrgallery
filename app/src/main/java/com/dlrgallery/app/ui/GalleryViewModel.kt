@@ -15,10 +15,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+
 data class GalleryUiState(
     val access: MediaAccess = MediaAccess.None,
     val isLoading: Boolean = false,
     val images: List<MediaImage> = emptyList(),
+    val trashedImages: List<MediaImage> = emptyList(),
     val albums: List<GalleryAlbum> = emptyList(),
     val errorMessage: String? = null,
 )
@@ -51,10 +53,12 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
             try {
                 val images = repository.loadImages()
+                val trashedImages = repository.loadTrashedImages()
                 _uiState.value = GalleryUiState(
                     access = access,
                     isLoading = false,
                     images = images,
+                    trashedImages = trashedImages,
                     albums = repository.buildAlbums(images),
                 )
             } catch (cancellation: CancellationException) {
@@ -62,12 +66,12 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             } catch (security: SecurityException) {
                 _uiState.value = GalleryUiState(
                     access = MediaAccess.None,
-                    errorMessage = "Android отозвал доступ к фотографиям.",
+                    errorMessage = "Android отозвал доступ к фото и видео.",
                 )
             } catch (error: Throwable) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    errorMessage = error.message ?: "Не удалось прочитать фотографии.",
+                    errorMessage = error.message ?: "Не удалось прочитать медиатеку.",
                 )
             }
         }
