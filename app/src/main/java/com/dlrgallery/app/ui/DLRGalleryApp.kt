@@ -1,8 +1,5 @@
 package com.dlrgallery.app.ui
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -70,13 +66,13 @@ fun DLRGalleryApp(
     galleryViewModel: GalleryViewModel = viewModel(),
     favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
     val uiState by galleryViewModel.uiState.collectAsStateWithLifecycle()
     val favoriteIds by favoritesViewModel.favoriteIds.collectAsStateWithLifecycle()
 
     var destination by rememberSaveable { mutableStateOf(GalleryDestination.Photos) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
 
@@ -111,35 +107,36 @@ fun DLRGalleryApp(
         val imagesById = uiState.images.associateBy(MediaImage::id)
         viewerImageIds.mapNotNull(imagesById::get)
     }
+    val activeVideo = remember(uiState.images, selectedVideoId) {
+        selectedVideoId?.let { id -> uiState.images.firstOrNull { it.id == id && it.isVideo } }
+    }
     val editorPhoto = remember(uiState.images, editorPhotoId) {
         editorPhotoId?.let { id -> uiState.images.firstOrNull { it.id == id && !it.isVideo } }
     }
 
+    fun closePhotoViewer() {
+        selectedPhotoId = null
+        viewerImageIds = emptyList()
+    }
+
+    fun closeVideoViewer() {
+        selectedVideoId = null
+    }
+
     fun openViewer(image: MediaImage, source: List<MediaImage>) {
         if (image.isVideo) {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(image.uri, image.mimeType.ifBlank { "video/*" })
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            try {
-                context.startActivity(intent)
-            } catch (_: ActivityNotFoundException) {
-                Toast.makeText(context, "Не найден видеоплеер", Toast.LENGTH_SHORT).show()
-            }
+            closePhotoViewer()
+            selectedVideoId = image.id
             return
         }
 
+        closeVideoViewer()
         viewerImageIds = source
             .asSequence()
             .filterNot(MediaImage::isVideo)
             .map(MediaImage::id)
             .toList()
         selectedPhotoId = image.id
-    }
-
-    fun closeViewer() {
-        selectedPhotoId = null
-        viewerImageIds = emptyList()
     }
 
     LaunchedEffect(uiState.images, uiState.isLoading, uiState.access) {
@@ -158,7 +155,12 @@ fun DLRGalleryApp(
             viewerImages.none { it.id == selectedPhotoId } &&
             !uiState.isLoading
         ) {
-            closeViewer()
+            closePhotoViewer()
+        }
+    }
+    LaunchedEffect(activeVideo, selectedVideoId, uiState.isLoading) {
+        if (selectedVideoId != null && activeVideo == null && !uiState.isLoading) {
+            closeVideoViewer()
         }
     }
     LaunchedEffect(editorPhotoId, editorPhoto, uiState.isLoading) {
@@ -180,16 +182,31 @@ fun DLRGalleryApp(
         return
     }
 
+    if (activeVideo != null) {
+        BackHandler(onBack = ::closeVideoViewer)
+        ImmersiveVideoPlayer(
+            video = activeVideo,
+            isFavorite = activeVideo.id in favoriteIds,
+            onToggleFavorite = favoritesViewModel::toggleFavorite,
+            onDelete = { video ->
+                closeVideoViewer()
+                requestDelete(listOf(video))
+            },
+            onBack = ::closeVideoViewer,
+        )
+        return
+    }
+
     val activePhotoId = selectedPhotoId
     if (activePhotoId != null && viewerImages.isNotEmpty()) {
-        BackHandler(onBack = ::closeViewer)
+        BackHandler(onBack = ::closePhotoViewer)
         ImmersivePhotoViewer(
             images = viewerImages,
             initialPhotoId = activePhotoId,
             favoriteIds = favoriteIds,
             onToggleFavorite = favoritesViewModel::toggleFavorite,
             onEdit = { image -> editorPhotoId = image.id },
-            onBack = ::closeViewer,
+            onBack = ::closePhotoViewer,
         )
         return
     }
