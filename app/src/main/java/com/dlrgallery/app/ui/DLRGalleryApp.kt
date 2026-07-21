@@ -1,5 +1,8 @@
 package com.dlrgallery.app.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -66,6 +70,7 @@ fun DLRGalleryApp(
     galleryViewModel: GalleryViewModel = viewModel(),
     favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
     val uiState by galleryViewModel.uiState.collectAsStateWithLifecycle()
     val favoriteIds by favoritesViewModel.favoriteIds.collectAsStateWithLifecycle()
 
@@ -107,11 +112,28 @@ fun DLRGalleryApp(
         viewerImageIds.mapNotNull(imagesById::get)
     }
     val editorPhoto = remember(uiState.images, editorPhotoId) {
-        editorPhotoId?.let { id -> uiState.images.firstOrNull { it.id == id } }
+        editorPhotoId?.let { id -> uiState.images.firstOrNull { it.id == id && !it.isVideo } }
     }
 
     fun openViewer(image: MediaImage, source: List<MediaImage>) {
-        viewerImageIds = source.map(MediaImage::id)
+        if (image.isVideo) {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(image.uri, image.mimeType.ifBlank { "video/*" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, "Не найден видеоплеер", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        viewerImageIds = source
+            .asSequence()
+            .filterNot(MediaImage::isVideo)
+            .map(MediaImage::id)
+            .toList()
         selectedPhotoId = image.id
     }
 
