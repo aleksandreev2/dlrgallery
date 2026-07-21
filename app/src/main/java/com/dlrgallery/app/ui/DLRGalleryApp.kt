@@ -142,7 +142,6 @@ fun DLRGalleryApp(
         BackHandler { editorPhotoId = null }
         PhotoEditorScreen(
             image = editorPhoto,
-            exportJpegQuality = settings.exportQuality.jpegQuality,
             onBack = { editorPhotoId = null },
             onSaved = {
                 editorPhotoId = null
