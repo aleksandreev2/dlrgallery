@@ -17,12 +17,20 @@ fun currentMediaAccess(context: Context): MediaAccess {
 
     return when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> when {
-            granted(Manifest.permission.READ_MEDIA_IMAGES) -> MediaAccess.Full
+            granted(Manifest.permission.READ_MEDIA_IMAGES) ||
+                granted(Manifest.permission.READ_MEDIA_VIDEO) -> MediaAccess.Full
             granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) -> MediaAccess.Partial
             else -> MediaAccess.None
         }
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-            if (granted(Manifest.permission.READ_MEDIA_IMAGES)) MediaAccess.Full else MediaAccess.None
+            if (
+                granted(Manifest.permission.READ_MEDIA_IMAGES) ||
+                granted(Manifest.permission.READ_MEDIA_VIDEO)
+            ) {
+                MediaAccess.Full
+            } else {
+                MediaAccess.None
+            }
         }
         else -> {
             if (granted(Manifest.permission.READ_EXTERNAL_STORAGE)) MediaAccess.Full else MediaAccess.None
@@ -33,10 +41,12 @@ fun currentMediaAccess(context: Context): MediaAccess {
 fun mediaPermissionsForCurrentVersion(): Array<String> = when {
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
         Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
         Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
     )
     Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> arrayOf(
         Manifest.permission.READ_EXTERNAL_STORAGE,
