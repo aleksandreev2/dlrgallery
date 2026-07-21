@@ -16,6 +16,9 @@ data class MediaImage(
     val mediaStoreId: Long = id,
     val isVideo: Boolean = false,
     val durationMillis: Long = 0L,
+    val relativePath: String = "",
+    val isTrashed: Boolean = false,
+    val dateExpiresMillis: Long = 0L,
 )
 
 data class GalleryAlbum(
@@ -26,4 +29,5 @@ data class GalleryAlbum(
     val latestImageMillis: Long,
     val coverMediaStoreId: Long = 0L,
     val coverIsVideo: Boolean = false,
+    val relativePath: String = "",
 )
