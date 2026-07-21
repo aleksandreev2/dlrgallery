@@ -1,5 +1,6 @@
 package com.dlrgallery.app.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -34,6 +36,7 @@ import com.dlrgallery.app.data.GalleryGridSize
 import com.dlrgallery.app.data.MediaAccess
 import com.dlrgallery.app.data.MediaImage
 import com.dlrgallery.app.data.MediaSortOrder
+import com.dlrgallery.app.data.TrashItem
 import com.dlrgallery.app.data.mediaPermissionsForCurrentVersion
 import com.dlrgallery.app.ui.theme.DLRGalleryTheme
 
@@ -66,6 +69,7 @@ fun DLRGalleryApp(
     galleryViewModel: GalleryViewModel = viewModel(),
     favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
     val uiState by galleryViewModel.uiState.collectAsStateWithLifecycle()
     val favoriteIds by favoritesViewModel.favoriteIds.collectAsStateWithLifecycle()
 
@@ -74,7 +78,6 @@ fun DLRGalleryApp(
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var trashOpen by rememberSaveable { mutableStateOf(false) }
     var organizerOpen by rememberSaveable { mutableStateOf(false) }
     var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
 
@@ -104,6 +107,12 @@ fun DLRGalleryApp(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(uiState.operationMessage) {
+        val message = uiState.operationMessage ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        galleryViewModel.consumeOperationMessage()
     }
 
     val selectedAlbum = remember(uiState.albums, selectedAlbumId) {
@@ -143,6 +152,20 @@ fun DLRGalleryApp(
             .map(MediaImage::id)
             .toList()
         selectedPhotoId = image.id
+    }
+
+    fun restoreTrashItems(items: List<TrashItem>) {
+        val systemItems = items.mapNotNull(TrashItem::systemMedia)
+        val localIds = items.mapNotNull(TrashItem::localEntryId)
+        if (systemItems.isNotEmpty()) trashController.restore(systemItems)
+        if (localIds.isNotEmpty()) galleryViewModel.restoreLocalTrash(localIds)
+    }
+
+    fun deleteTrashItemsPermanently(items: List<TrashItem>) {
+        val systemItems = items.mapNotNull(TrashItem::systemMedia)
+        val localIds = items.mapNotNull(TrashItem::localEntryId)
+        if (systemItems.isNotEmpty()) trashController.deletePermanently(systemItems)
+        if (localIds.isNotEmpty()) galleryViewModel.deleteLocalTrashPermanently(localIds)
     }
 
     LaunchedEffect(uiState.images, uiState.trashedImages, uiState.isLoading, uiState.access) {
@@ -186,18 +209,6 @@ fun DLRGalleryApp(
                 editorPhotoId = null
                 galleryViewModel.refresh()
             },
-        )
-        return
-    }
-
-    if (trashOpen) {
-        BackHandler { trashOpen = false }
-        TrashScreen(
-            images = uiState.trashedImages,
-            gridColumns = settings.gridSize.columns,
-            onBack = { trashOpen = false },
-            onRestore = trashController.restore,
-            onDeletePermanently = trashController.deletePermanently,
         )
         return
     }
@@ -309,7 +320,6 @@ fun DLRGalleryApp(
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
                     onManageAlbums = { organizerOpen = true },
-                    onOpenTrash = { trashOpen = true },
                     onAlbumClick = { selectedAlbumId = it.id },
                 )
                 GalleryDestination.Favorites -> FavoriteGalleryScreen(
@@ -320,6 +330,13 @@ fun DLRGalleryApp(
                     onSortOrderChange = onMediaSortOrderChange,
                     onDeleteRequest = requestDelete,
                     onPhotoClick = ::openViewer,
+                )
+                GalleryDestination.Trash -> TrashScreen(
+                    items = uiState.trashItems,
+                    gridColumns = settings.gridSize.columns,
+                    isBusy = trashController.isBusy || uiState.isTrashBusy,
+                    onRestore = ::restoreTrashItems,
+                    onDeletePermanently = ::deleteTrashItemsPermanently,
                 )
                 GalleryDestination.Settings -> SettingsScreen(
                     photoCount = uiState.images.size,
