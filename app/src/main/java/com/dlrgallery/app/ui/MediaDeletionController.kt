@@ -12,21 +12,24 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.dlrgallery.app.data.LocalTrashRepository
 import com.dlrgallery.app.data.MediaImage
+import com.dlrgallery.app.data.StagedLocalTrashEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
 
 data class MediaTrashController(
     val moveToTrash: (List<MediaImage>) -> Unit,
     val restore: (List<MediaImage>) -> Unit,
     val deletePermanently: (List<MediaImage>) -> Unit,
+    val isBusy: Boolean,
 )
 
 private enum class SystemMediaAction {
@@ -41,12 +44,28 @@ fun rememberMediaTrashController(
 ): MediaTrashController {
     val context = LocalContext.current
     val resolver = context.contentResolver
+    val localTrashRepository = remember(context) { LocalTrashRepository(context) }
     val scope = rememberCoroutineScope()
 
     var systemAction by remember { mutableStateOf<SystemMediaAction?>(null) }
-    var legacyQueue by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var legacyQueue by remember { mutableStateOf<List<MediaImage>>(emptyList()) }
+    var legacyStage by remember { mutableStateOf<StagedLocalTrashEntry?>(null) }
     var legacyPermissionUri by remember { mutableStateOf<Uri?>(null) }
     var legacyInProgress by remember { mutableStateOf(false) }
+    var legacyInitialCount by remember { mutableIntStateOf(0) }
+
+    fun stopLegacyMove(message: String, discardStage: Boolean) {
+        val stage = legacyStage
+        legacyQueue = emptyList()
+        legacyStage = null
+        legacyPermissionUri = null
+        legacyInProgress = false
+        if (discardStage && stage != null) {
+            scope.launch { localTrashRepository.discard(stage) }
+        }
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        onFinished()
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
@@ -64,68 +83,80 @@ fun rememberMediaTrashController(
         }
 
         val uri = legacyPermissionUri
+        val stage = legacyStage
         legacyPermissionUri = null
-        if (result.resultCode != Activity.RESULT_OK || uri == null) {
-            legacyQueue = emptyList()
-            legacyInProgress = false
-            Toast.makeText(context, "Удаление отменено", Toast.LENGTH_SHORT).show()
+        if (result.resultCode != Activity.RESULT_OK || uri == null || stage == null) {
+            stopLegacyMove("Перемещение в корзину отменено", discardStage = true)
             return@rememberLauncherForActivityResult
         }
 
         scope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    resolver.delete(uri, null, null)
-                }
-            } catch (error: Throwable) {
-                Toast.makeText(
-                    context,
-                    error.message ?: "Не удалось удалить файл",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            } finally {
+                withContext(Dispatchers.IO) { resolver.delete(uri, null, null) }
+                localTrashRepository.commit(stage)
+                legacyStage = null
                 legacyQueue = legacyQueue.drop(1)
+            } catch (error: Throwable) {
+                stopLegacyMove(
+                    error.message ?: "Не удалось переместить файл в корзину",
+                    discardStage = true,
+                )
             }
         }
     }
 
-    LaunchedEffect(legacyQueue, legacyPermissionUri, legacyInProgress) {
+    LaunchedEffect(legacyQueue, legacyStage, legacyPermissionUri, legacyInProgress) {
         if (!legacyInProgress || legacyPermissionUri != null) return@LaunchedEffect
 
-        val uri = legacyQueue.firstOrNull()
-        if (uri == null) {
+        val image = legacyQueue.firstOrNull()
+        if (image == null) {
             legacyInProgress = false
-            Toast.makeText(context, "Файлы удалены", Toast.LENGTH_SHORT).show()
+            legacyStage = null
+            val completed = legacyInitialCount.coerceAtLeast(0)
+            legacyInitialCount = 0
+            Toast.makeText(
+                context,
+                "Перемещено в корзину: ${formatLegacyFileCount(completed)}",
+                Toast.LENGTH_SHORT,
+            ).show()
             onFinished()
             return@LaunchedEffect
         }
 
-        try {
-            withContext(Dispatchers.IO) {
-                resolver.delete(uri, null, null)
+        val stage = legacyStage
+        if (stage == null) {
+            try {
+                legacyStage = localTrashRepository.stage(image)
+            } catch (error: Throwable) {
+                stopLegacyMove(
+                    error.message ?: "Не удалось создать безопасную копию файла",
+                    discardStage = false,
+                )
             }
+            return@LaunchedEffect
+        }
+
+        try {
+            withContext(Dispatchers.IO) { resolver.delete(image.uri, null, null) }
+            localTrashRepository.commit(stage)
+            legacyStage = null
             legacyQueue = legacyQueue.drop(1)
         } catch (security: RecoverableSecurityException) {
             if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-                legacyPermissionUri = uri
+                legacyPermissionUri = image.uri
                 permissionLauncher.launch(
                     IntentSenderRequest.Builder(
                         security.userAction.actionIntent.intentSender,
                     ).build(),
                 )
             } else {
-                legacyQueue = emptyList()
-                legacyInProgress = false
-                Toast.makeText(context, "Android не разрешил удалить файл", Toast.LENGTH_SHORT).show()
+                stopLegacyMove("Android не разрешил удалить оригинал", discardStage = true)
             }
         } catch (error: Throwable) {
-            legacyQueue = emptyList()
-            legacyInProgress = false
-            Toast.makeText(
-                context,
-                error.message ?: "Не удалось удалить файл",
-                Toast.LENGTH_SHORT,
-            ).show()
+            stopLegacyMove(
+                error.message ?: "Не удалось удалить оригинал после резервного копирования",
+                discardStage = true,
+            )
         }
     }
 
@@ -133,16 +164,22 @@ fun rememberMediaTrashController(
         val uris = images.map(MediaImage::uri).distinct()
         if (uris.isEmpty()) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            if (action == SystemMediaAction.Trash || action == SystemMediaAction.DeletePermanently) {
-                Toast.makeText(
-                    context,
-                    "На Android 10 системной корзины нет — файлы будут удалены с устройства",
-                    Toast.LENGTH_LONG,
-                ).show()
-                legacyQueue = uris
+            if (action == SystemMediaAction.Trash) {
+                if (legacyInProgress) {
+                    Toast.makeText(context, "Дождитесь завершения текущей операции", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                legacyInitialCount = images.size
+                legacyQueue = images.distinctBy(MediaImage::uri)
+                legacyStage = null
+                legacyPermissionUri = null
                 legacyInProgress = true
             } else {
-                Toast.makeText(context, "Восстановление доступно с Android 11", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    "Для локальной корзины используйте вкладку «Корзина»",
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
             return
         }
@@ -173,6 +210,7 @@ fun rememberMediaTrashController(
         deletePermanently = { images ->
             launchSystemAction(SystemMediaAction.DeletePermanently, images)
         },
+        isBusy = systemAction != null || legacyInProgress,
     )
 }
 
@@ -191,4 +229,10 @@ private fun SystemMediaAction.cancelMessage(): String = when (this) {
     SystemMediaAction.Trash -> "Перемещение в корзину отменено"
     SystemMediaAction.Restore -> "Восстановление отменено"
     SystemMediaAction.DeletePermanently -> "Удаление отменено"
+}
+
+private fun formatLegacyFileCount(count: Int): String = when {
+    count % 10 == 1 && count % 100 != 11 -> "$count файл"
+    count % 10 in 2..4 && count % 100 !in 12..14 -> "$count файла"
+    else -> "$count файлов"
 }
