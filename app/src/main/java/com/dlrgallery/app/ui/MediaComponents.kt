@@ -1,7 +1,8 @@
 package com.dlrgallery.app.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Image
@@ -37,7 +39,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,8 +63,16 @@ fun PhotoGrid(
     showPartialAccessBanner: Boolean,
     onChangeAccess: () -> Unit,
     onPhotoClick: (MediaImage) -> Unit,
+    selectedIds: Set<Long> = emptySet(),
+    selectionMode: Boolean = false,
+    groupByDate: Boolean = true,
+    newestDatesFirst: Boolean = true,
+    onPhotoLongClick: (MediaImage) -> Unit = {},
+    onPhotoSelectionToggle: (MediaImage) -> Unit = {},
 ) {
-    val groups = remember(images) { groupPhotosByDay(images) }
+    val groups = remember(images, newestDatesFirst) {
+        groupPhotosByDay(images, newestDatesFirst)
+    }
     val columns = gridColumns.coerceIn(2, 5)
     val spacing = if (columns >= 5) 2.dp else 3.dp
     val sidePadding = if (columns >= 4) 4.dp else 6.dp
@@ -81,18 +94,38 @@ fun PhotoGrid(
             }
         }
 
-        groups.forEach { group ->
-            item(
-                key = "header-${group.date}",
-                span = { GridItemSpan(maxLineSpan) },
-            ) {
-                DateHeader(
-                    title = formatDateHeader(group.date),
-                    count = formatPhotoCount(group.images.size),
-                )
+        if (groupByDate) {
+            groups.forEach { group ->
+                item(
+                    key = "header-${group.date}",
+                    span = { GridItemSpan(maxLineSpan) },
+                ) {
+                    DateHeader(
+                        title = formatDateHeader(group.date),
+                        count = formatPhotoCount(group.images.size),
+                    )
+                }
+                items(group.images, key = MediaImage::id) { image ->
+                    PhotoTile(
+                        image = image,
+                        selected = image.id in selectedIds,
+                        selectionMode = selectionMode,
+                        onClick = { onPhotoClick(image) },
+                        onLongClick = { onPhotoLongClick(image) },
+                        onSelectionToggle = { onPhotoSelectionToggle(image) },
+                    )
+                }
             }
-            items(group.images, key = MediaImage::id) { image ->
-                PhotoTile(image = image, onClick = { onPhotoClick(image) })
+        } else {
+            items(images, key = MediaImage::id) { image ->
+                PhotoTile(
+                    image = image,
+                    selected = image.id in selectedIds,
+                    selectionMode = selectionMode,
+                    onClick = { onPhotoClick(image) },
+                    onLongClick = { onPhotoLongClick(image) },
+                    onSelectionToggle = { onPhotoSelectionToggle(image) },
+                )
             }
         }
     }
@@ -188,18 +221,33 @@ fun MediaErrorState(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PhotoTile(
     image: MediaImage,
+    selected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onSelectionToggle: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(RoundedCornerShape(5.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) onSelectionToggle() else onClick()
+                },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (selectionMode) onSelectionToggle() else onLongClick()
+                },
+            ),
     ) {
         AsyncImage(
             model = image.uri,
@@ -207,9 +255,27 @@ private fun PhotoTile(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
+
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f)),
+            )
+            Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = "Выбрано",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(25.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AlbumCard(
     album: GalleryAlbum,
@@ -218,7 +284,7 @@ private fun AlbumCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick),
     ) {
         AsyncImage(
             model = album.coverUri,
@@ -361,16 +427,24 @@ private data class PhotoDayGroup(
     val images: List<MediaImage>,
 )
 
-private fun groupPhotosByDay(images: List<MediaImage>): List<PhotoDayGroup> {
+private fun groupPhotosByDay(
+    images: List<MediaImage>,
+    newestFirst: Boolean,
+): List<PhotoDayGroup> {
     val zone = ZoneId.systemDefault()
-    return images
+    val groups = images
         .groupBy { image ->
             Instant.ofEpochMilli(image.dateTakenMillis)
                 .atZone(zone)
                 .toLocalDate()
         }
         .map { (date, items) -> PhotoDayGroup(date = date, images = items) }
-        .sortedByDescending(PhotoDayGroup::date)
+
+    return if (newestFirst) {
+        groups.sortedByDescending(PhotoDayGroup::date)
+    } else {
+        groups.sortedBy(PhotoDayGroup::date)
+    }
 }
 
 private fun formatDateHeader(date: LocalDate): String {
