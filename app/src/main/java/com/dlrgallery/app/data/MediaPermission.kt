@@ -16,20 +16,25 @@ fun currentMediaAccess(context: Context): MediaAccess {
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     return when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> when {
-            granted(Manifest.permission.READ_MEDIA_IMAGES) ||
-                granted(Manifest.permission.READ_MEDIA_VIDEO) -> MediaAccess.Full
-            granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) -> MediaAccess.Partial
-            else -> MediaAccess.None
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+            val imagesGranted = granted(Manifest.permission.READ_MEDIA_IMAGES)
+            val videosGranted = granted(Manifest.permission.READ_MEDIA_VIDEO)
+            val selectedGranted = granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+
+            when {
+                imagesGranted && videosGranted -> MediaAccess.Full
+                imagesGranted || videosGranted || selectedGranted -> MediaAccess.Partial
+                else -> MediaAccess.None
+            }
         }
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-            if (
-                granted(Manifest.permission.READ_MEDIA_IMAGES) ||
-                granted(Manifest.permission.READ_MEDIA_VIDEO)
-            ) {
-                MediaAccess.Full
-            } else {
-                MediaAccess.None
+            val imagesGranted = granted(Manifest.permission.READ_MEDIA_IMAGES)
+            val videosGranted = granted(Manifest.permission.READ_MEDIA_VIDEO)
+
+            when {
+                imagesGranted && videosGranted -> MediaAccess.Full
+                imagesGranted || videosGranted -> MediaAccess.Partial
+                else -> MediaAccess.None
             }
         }
         else -> {
