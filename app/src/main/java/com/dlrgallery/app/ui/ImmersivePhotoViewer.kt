@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -124,7 +123,7 @@ fun ImmersivePhotoViewer(
             ZoomablePhoto(
                 image = images[page],
                 active = page == currentPage,
-                onTap = { controlsVisible = !controlsVisible },
+                onSingleTap = { controlsVisible = !controlsVisible },
                 onScaleChanged = { scale ->
                     if (page == pagerState.currentPage) {
                         currentScale = scale
@@ -239,7 +238,7 @@ fun ImmersivePhotoViewer(
 private fun ZoomablePhoto(
     image: MediaImage,
     active: Boolean,
-    onTap: () -> Unit,
+    onSingleTap: () -> Unit,
     onScaleChanged: (Float) -> Unit,
 ) {
     var scale by remember(image.id) { mutableFloatStateOf(1f) }
@@ -263,16 +262,15 @@ private fun ZoomablePhoto(
             .fillMaxSize()
             .clipToBounds()
             .onSizeChanged { containerSize = it }
-            .pointerInput(image.id) {
+            .pointerInput(image.id, active) {
                 detectTapGestures(
-                    onTap = { onTap() },
+                    onTap = { onSingleTap() },
                     onDoubleTap = {
-                        if (scale > 1.01f) {
-                            scale = 1f
-                            offset = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                            offset = Offset.Zero
+                        val targetScale = if (scale > 1.01f) 1f else 2.5f
+                        scale = targetScale
+                        offset = Offset.Zero
+                        if (active) {
+                            onScaleChanged(targetScale)
                         }
                     },
                 )
@@ -286,13 +284,14 @@ private fun ZoomablePhoto(
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
                         val isPinching = pressedPointers > 1 && abs(zoomChange - 1f) > 0.0001f
-                        val isPanning = scale > 1.01f && panChange.getDistance() > 1f
+                        val isPanning = scale > 1.01f && panChange.getDistance() > 0.5f
                         val shouldTransform = pressedPointers > 1 || isPinching || isPanning
 
                         if (shouldTransform) {
-                            val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+                            val calculatedScale = (scale * zoomChange).coerceIn(1f, 5f)
+                            val nextScale = if (calculatedScale <= 1.01f) 1f else calculatedScale
                             scale = nextScale
-                            offset = if (nextScale <= 1.01f) {
+                            offset = if (nextScale == 1f) {
                                 Offset.Zero
                             } else {
                                 clampOffset(
