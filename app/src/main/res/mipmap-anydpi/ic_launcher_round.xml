@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@drawable/ic_launcher_legacy" />
-</selector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:src="@drawable/dlr_launcher_source"
+            android:gravity="fill"
+            android:filter="true" />
+    </item>
+</layer-list>
