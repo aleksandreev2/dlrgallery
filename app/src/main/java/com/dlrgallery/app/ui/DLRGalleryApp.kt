@@ -33,6 +33,7 @@ import com.dlrgallery.app.data.ExportQuality
 import com.dlrgallery.app.data.GalleryGridSize
 import com.dlrgallery.app.data.MediaAccess
 import com.dlrgallery.app.data.MediaImage
+import com.dlrgallery.app.data.MediaSortOrder
 import com.dlrgallery.app.data.mediaPermissionsForCurrentVersion
 import com.dlrgallery.app.ui.theme.DLRGalleryTheme
 
@@ -49,6 +50,7 @@ fun DLRGalleryRoot(
             onGridSizeChange = settingsViewModel::setGridSize,
             onExportQualityChange = settingsViewModel::setExportQuality,
             onSaveAsCopyChange = settingsViewModel::setSaveAsCopy,
+            onMediaSortOrderChange = settingsViewModel::setMediaSortOrder,
         )
     }
 }
@@ -60,6 +62,7 @@ fun DLRGalleryApp(
     onGridSizeChange: (GalleryGridSize) -> Unit,
     onExportQualityChange: (ExportQuality) -> Unit,
     onSaveAsCopyChange: (Boolean) -> Unit,
+    onMediaSortOrderChange: (MediaSortOrder) -> Unit,
     galleryViewModel: GalleryViewModel = viewModel(),
     favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
@@ -71,6 +74,10 @@ fun DLRGalleryApp(
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
     var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+
+    val requestDelete = rememberMediaDeleteRequester(
+        onFinished = galleryViewModel::refresh,
+    )
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -170,12 +177,15 @@ fun DLRGalleryApp(
             uiState.images.filter { it.bucketId == selectedAlbum.id }
         }
         BackHandler { selectedAlbumId = null }
-        AlbumDetailScreen(
+        AlbumDetailBrowserScreen(
             album = selectedAlbum,
             images = albumImages,
             gridColumns = settings.gridSize.columns,
+            sortOrder = settings.mediaSortOrder,
+            onSortOrderChange = onMediaSortOrderChange,
             onBack = { selectedAlbumId = null },
-            onPhotoClick = { image -> openViewer(image, albumImages) },
+            onDeleteRequest = requestDelete,
+            onPhotoClick = ::openViewer,
         )
         return
     }
@@ -211,30 +221,31 @@ fun DLRGalleryApp(
             label = "main-tabs",
         ) { selected ->
             when (selected) {
-                GalleryDestination.Photos -> PhotosScreen(
+                GalleryDestination.Photos -> PhotosBrowserScreen(
                     uiState = uiState,
                     gridColumns = settings.gridSize.columns,
+                    sortOrder = settings.mediaSortOrder,
+                    onSortOrderChange = onMediaSortOrderChange,
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
-                    onPhotoClick = { image -> openViewer(image, uiState.images) },
+                    onDeleteRequest = requestDelete,
+                    onPhotoClick = ::openViewer,
                 )
-                GalleryDestination.Albums -> AlbumsScreen(
+                GalleryDestination.Albums -> AlbumsBrowserScreen(
                     uiState = uiState,
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
                     onAlbumClick = { selectedAlbumId = it.id },
                 )
-                GalleryDestination.Favorites -> {
-                    val favoriteImages = remember(uiState.images, favoriteIds) {
-                        uiState.images.filter { it.id in favoriteIds }
-                    }
-                    FavoriteGalleryScreen(
-                        allImages = uiState.images,
-                        favoriteIds = favoriteIds,
-                        gridColumns = settings.gridSize.columns,
-                        onPhotoClick = { image -> openViewer(image, favoriteImages) },
-                    )
-                }
+                GalleryDestination.Favorites -> FavoriteGalleryScreen(
+                    allImages = uiState.images,
+                    favoriteIds = favoriteIds,
+                    gridColumns = settings.gridSize.columns,
+                    sortOrder = settings.mediaSortOrder,
+                    onSortOrderChange = onMediaSortOrderChange,
+                    onDeleteRequest = requestDelete,
+                    onPhotoClick = ::openViewer,
+                )
                 GalleryDestination.Settings -> SettingsScreen(
                     photoCount = uiState.images.size,
                     albumCount = uiState.albums.size,

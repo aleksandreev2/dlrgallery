@@ -9,12 +9,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -23,51 +21,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dlrgallery.app.data.MediaImage
+import com.dlrgallery.app.data.MediaSortOrder
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoriteGalleryScreen(
     allImages: List<MediaImage>,
     favoriteIds: Set<Long>,
     gridColumns: Int,
-    onPhotoClick: (MediaImage) -> Unit,
+    sortOrder: MediaSortOrder,
+    onSortOrderChange: (MediaSortOrder) -> Unit,
+    onDeleteRequest: (List<MediaImage>) -> Unit,
+    onPhotoClick: (MediaImage, List<MediaImage>) -> Unit,
 ) {
     val favoriteImages = remember(allImages, favoriteIds) {
         allImages.filter { image -> image.id in favoriteIds }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        text = "Избранное",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (favoriteImages.isNotEmpty()) {
-                        Text(
-                            text = formatPhotoCount(favoriteImages.size),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            },
-        )
-
-        if (favoriteImages.isEmpty()) {
-            EmptyFavoritesState()
-        } else {
-            PhotoGrid(
-                images = favoriteImages,
-                gridColumns = gridColumns,
-                showPartialAccessBanner = false,
-                onChangeAccess = {},
-                onPhotoClick = onPhotoClick,
-            )
-        }
-    }
+    PhotoCollectionScreen(
+        title = "Избранное",
+        images = favoriteImages,
+        gridColumns = gridColumns,
+        sortOrder = sortOrder,
+        onSortOrderChange = onSortOrderChange,
+        showPartialAccessBanner = false,
+        onChangeAccess = {},
+        onPhotoClick = onPhotoClick,
+        onDeleteRequest = onDeleteRequest,
+        emptyContent = { EmptyFavoritesState() },
+    )
 }
 
 @Composable
