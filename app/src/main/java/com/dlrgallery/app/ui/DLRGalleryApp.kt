@@ -27,12 +27,39 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dlrgallery.app.data.AppSettings
+import com.dlrgallery.app.data.AppThemeMode
+import com.dlrgallery.app.data.ExportQuality
+import com.dlrgallery.app.data.GalleryGridSize
 import com.dlrgallery.app.data.MediaAccess
 import com.dlrgallery.app.data.MediaImage
 import com.dlrgallery.app.data.mediaPermissionsForCurrentVersion
+import com.dlrgallery.app.ui.theme.DLRGalleryTheme
+
+@Composable
+fun DLRGalleryRoot(
+    settingsViewModel: SettingsViewModel = viewModel(),
+) {
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+
+    DLRGalleryTheme(themeMode = settings.themeMode) {
+        DLRGalleryApp(
+            settings = settings,
+            onThemeModeChange = settingsViewModel::setThemeMode,
+            onGridSizeChange = settingsViewModel::setGridSize,
+            onExportQualityChange = settingsViewModel::setExportQuality,
+            onSaveAsCopyChange = settingsViewModel::setSaveAsCopy,
+        )
+    }
+}
 
 @Composable
 fun DLRGalleryApp(
+    settings: AppSettings,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    onGridSizeChange: (GalleryGridSize) -> Unit,
+    onExportQualityChange: (ExportQuality) -> Unit,
+    onSaveAsCopyChange: (Boolean) -> Unit,
     galleryViewModel: GalleryViewModel = viewModel(),
     favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
@@ -115,6 +142,7 @@ fun DLRGalleryApp(
         BackHandler { editorPhotoId = null }
         PhotoEditorScreen(
             image = editorPhoto,
+            exportJpegQuality = settings.exportQuality.jpegQuality,
             onBack = { editorPhotoId = null },
             onSaved = {
                 editorPhotoId = null
@@ -146,6 +174,7 @@ fun DLRGalleryApp(
         AlbumDetailScreen(
             album = selectedAlbum,
             images = albumImages,
+            gridColumns = settings.gridSize.columns,
             onBack = { selectedAlbumId = null },
             onPhotoClick = { image -> openViewer(image, albumImages) },
         )
@@ -185,6 +214,7 @@ fun DLRGalleryApp(
             when (selected) {
                 GalleryDestination.Photos -> PhotosScreen(
                     uiState = uiState,
+                    gridColumns = settings.gridSize.columns,
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
                     onPhotoClick = { image -> openViewer(image, uiState.images) },
@@ -202,12 +232,18 @@ fun DLRGalleryApp(
                     FavoriteGalleryScreen(
                         allImages = uiState.images,
                         favoriteIds = favoriteIds,
+                        gridColumns = settings.gridSize.columns,
                         onPhotoClick = { image -> openViewer(image, favoriteImages) },
                     )
                 }
                 GalleryDestination.Settings -> SettingsScreen(
                     photoCount = uiState.images.size,
                     albumCount = uiState.albums.size,
+                    settings = settings,
+                    onThemeModeChange = onThemeModeChange,
+                    onGridSizeChange = onGridSizeChange,
+                    onExportQualityChange = onExportQualityChange,
+                    onSaveAsCopyChange = onSaveAsCopyChange,
                 )
             }
         }
