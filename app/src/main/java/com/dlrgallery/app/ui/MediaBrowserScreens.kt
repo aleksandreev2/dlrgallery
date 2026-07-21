@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sort
@@ -99,7 +100,7 @@ fun AlbumDetailBrowserScreen(
 private enum class AlbumSortOrder(val label: String) {
     Recent("Сначала недавние"),
     Name("По названию"),
-    Count("По количеству фото"),
+    Count("По количеству файлов"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,6 +109,7 @@ fun AlbumsBrowserScreen(
     uiState: GalleryUiState,
     onRequestAccess: () -> Unit,
     onRefresh: () -> Unit,
+    onManageAlbums: () -> Unit,
     onAlbumClick: (GalleryAlbum) -> Unit,
 ) {
     var searchVisible by rememberSaveable { mutableStateOf(false) }
@@ -148,6 +150,12 @@ fun AlbumsBrowserScreen(
                 }
             },
             actions = {
+                IconButton(onClick = onManageAlbums) {
+                    Icon(
+                        Icons.Outlined.CreateNewFolder,
+                        contentDescription = "Создать альбом и управлять файлами",
+                    )
+                }
                 IconButton(
                     onClick = {
                         searchVisible = !searchVisible
