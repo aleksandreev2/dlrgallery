@@ -24,19 +24,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dlrgallery.app.data.MediaAccess
+import com.dlrgallery.app.data.MediaImage
 import com.dlrgallery.app.data.mediaPermissionsForCurrentVersion
 
 @Composable
 fun DLRGalleryApp(
     galleryViewModel: GalleryViewModel = viewModel(),
+    favoritesViewModel: FavoritesViewModel = viewModel(),
 ) {
     val uiState by galleryViewModel.uiState.collectAsStateWithLifecycle()
+    val favoriteIds by favoritesViewModel.favoriteIds.collectAsStateWithLifecycle()
+
     var destination by rememberSaveable { mutableStateOf(GalleryDestination.Photos) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var viewerImageIds by remember { mutableStateOf<List<Long>>(emptyList()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -58,16 +64,27 @@ fun DLRGalleryApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val selectedPhoto = remember(uiState.images, selectedPhotoId) {
-        selectedPhotoId?.let { id -> uiState.images.firstOrNull { it.id == id } }
-    }
     val selectedAlbum = remember(uiState.albums, selectedAlbumId) {
         selectedAlbumId?.let { id -> uiState.albums.firstOrNull { it.id == id } }
     }
+    val viewerImages = remember(uiState.images, viewerImageIds) {
+        val imagesById = uiState.images.associateBy(MediaImage::id)
+        viewerImageIds.mapNotNull(imagesById::get)
+    }
 
-    LaunchedEffect(uiState.images, selectedPhotoId) {
-        if (selectedPhotoId != null && selectedPhoto == null && !uiState.isLoading) {
-            selectedPhotoId = null
+    fun openViewer(image: MediaImage, source: List<MediaImage>) {
+        viewerImageIds = source.map(MediaImage::id)
+        selectedPhotoId = image.id
+    }
+
+    fun closeViewer() {
+        selectedPhotoId = null
+        viewerImageIds = emptyList()
+    }
+
+    LaunchedEffect(uiState.images, uiState.isLoading, uiState.access) {
+        if (!uiState.isLoading && uiState.access == MediaAccess.Full) {
+            favoritesViewModel.removeMissingImages(uiState.images.mapTo(mutableSetOf(), MediaImage::id))
         }
     }
     LaunchedEffect(uiState.albums, selectedAlbumId) {
@@ -75,12 +92,25 @@ fun DLRGalleryApp(
             selectedAlbumId = null
         }
     }
+    LaunchedEffect(viewerImages, selectedPhotoId, uiState.isLoading) {
+        if (
+            selectedPhotoId != null &&
+            viewerImages.none { it.id == selectedPhotoId } &&
+            !uiState.isLoading
+        ) {
+            closeViewer()
+        }
+    }
 
-    if (selectedPhoto != null) {
-        BackHandler { selectedPhotoId = null }
-        PhotoViewerScreen(
-            image = selectedPhoto,
-            onBack = { selectedPhotoId = null },
+    val activePhotoId = selectedPhotoId
+    if (activePhotoId != null && viewerImages.isNotEmpty()) {
+        BackHandler(onBack = ::closeViewer)
+        ImmersivePhotoViewer(
+            images = viewerImages,
+            initialPhotoId = activePhotoId,
+            favoriteIds = favoriteIds,
+            onToggleFavorite = favoritesViewModel::toggleFavorite,
+            onBack = ::closeViewer,
         )
         return
     }
@@ -94,7 +124,7 @@ fun DLRGalleryApp(
             album = selectedAlbum,
             images = albumImages,
             onBack = { selectedAlbumId = null },
-            onPhotoClick = { selectedPhotoId = it.id },
+            onPhotoClick = { image -> openViewer(image, albumImages) },
         )
         return
     }
@@ -134,7 +164,7 @@ fun DLRGalleryApp(
                     uiState = uiState,
                     onRequestAccess = requestMediaAccess,
                     onRefresh = galleryViewModel::refresh,
-                    onPhotoClick = { selectedPhotoId = it.id },
+                    onPhotoClick = { image -> openViewer(image, uiState.images) },
                 )
                 GalleryDestination.Albums -> AlbumsScreen(
                     uiState = uiState,
@@ -142,7 +172,16 @@ fun DLRGalleryApp(
                     onRefresh = galleryViewModel::refresh,
                     onAlbumClick = { selectedAlbumId = it.id },
                 )
-                GalleryDestination.Favorites -> FavoritesScreen()
+                GalleryDestination.Favorites -> {
+                    val favoriteImages = remember(uiState.images, favoriteIds) {
+                        uiState.images.filter { it.id in favoriteIds }
+                    }
+                    FavoriteGalleryScreen(
+                        allImages = uiState.images,
+                        favoriteIds = favoriteIds,
+                        onPhotoClick = { image -> openViewer(image, favoriteImages) },
+                    )
+                }
                 GalleryDestination.Settings -> SettingsScreen(
                     photoCount = uiState.images.size,
                     albumCount = uiState.albums.size,
