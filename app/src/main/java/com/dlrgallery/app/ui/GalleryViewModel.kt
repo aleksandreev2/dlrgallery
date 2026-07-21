@@ -124,10 +124,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         trashJob?.cancel()
         trashJob = viewModelScope.launch {
             _uiState.update { state -> state.copy(isTrashBusy = true) }
-            val message = runCatching(operation).fold(
-                onSuccess = { result -> operationMessage(successWord, result) },
-                onFailure = { error -> error.message ?: "Операция с корзиной не выполнена" },
-            )
+            val message = try {
+                operationMessage(successWord, operation())
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                error.message ?: "Операция с корзиной не выполнена"
+            }
             _uiState.update { state ->
                 state.copy(isTrashBusy = false, operationMessage = message)
             }
