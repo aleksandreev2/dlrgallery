@@ -1,23 +1,16 @@
 package com.dlrgallery.app.data
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
-private val Context.favoritesDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "favorite_photos",
-)
-
 class FavoritesRepository(context: Context) {
-    private val dataStore = context.applicationContext.favoritesDataStore
+    private val dataStore = context.applicationContext.appPreferencesDataStore
 
     val favoriteIds: Flow<Set<Long>> = dataStore.data
         .catch { error ->
