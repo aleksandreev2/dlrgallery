@@ -22,19 +22,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Returns a callback that moves selected images to the Android system trash when available.
- * Android 10 confirms protected files one by one through RecoverableSecurityException.
- */
+
+data class MediaTrashController(
+    val moveToTrash: (List<MediaImage>) -> Unit,
+    val restore: (List<MediaImage>) -> Unit,
+    val deletePermanently: (List<MediaImage>) -> Unit,
+)
+
+private enum class SystemMediaAction {
+    Trash,
+    Restore,
+    DeletePermanently,
+}
+
 @Composable
-fun rememberMediaDeleteRequester(
+fun rememberMediaTrashController(
     onFinished: () -> Unit,
-): (List<MediaImage>) -> Unit {
+): MediaTrashController {
     val context = LocalContext.current
     val resolver = context.contentResolver
     val scope = rememberCoroutineScope()
 
-    var bulkRequestActive by remember { mutableStateOf(false) }
+    var systemAction by remember { mutableStateOf<SystemMediaAction?>(null) }
     var legacyQueue by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var legacyPermissionUri by remember { mutableStateOf<Uri?>(null) }
     var legacyInProgress by remember { mutableStateOf(false) }
@@ -42,12 +51,14 @@ fun rememberMediaDeleteRequester(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (bulkRequestActive) {
-            bulkRequestActive = false
+        val action = systemAction
+        if (action != null) {
+            systemAction = null
             if (result.resultCode == Activity.RESULT_OK) {
+                Toast.makeText(context, action.successMessage(), Toast.LENGTH_SHORT).show()
                 onFinished()
             } else {
-                Toast.makeText(context, "Перемещение в корзину отменено", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, action.cancelMessage(), Toast.LENGTH_SHORT).show()
             }
             return@rememberLauncherForActivityResult
         }
@@ -69,7 +80,7 @@ fun rememberMediaDeleteRequester(
             } catch (error: Throwable) {
                 Toast.makeText(
                     context,
-                    error.message ?: "Не удалось удалить фотографию",
+                    error.message ?: "Не удалось удалить файл",
                     Toast.LENGTH_SHORT,
                 ).show()
             } finally {
@@ -84,6 +95,7 @@ fun rememberMediaDeleteRequester(
         val uri = legacyQueue.firstOrNull()
         if (uri == null) {
             legacyInProgress = false
+            Toast.makeText(context, "Файлы удалены", Toast.LENGTH_SHORT).show()
             onFinished()
             return@LaunchedEffect
         }
@@ -111,34 +123,72 @@ fun rememberMediaDeleteRequester(
             legacyInProgress = false
             Toast.makeText(
                 context,
-                error.message ?: "Не удалось удалить фотографию",
+                error.message ?: "Не удалось удалить файл",
                 Toast.LENGTH_SHORT,
             ).show()
         }
     }
 
-    return request@{ images: List<MediaImage> ->
+    fun launchSystemAction(action: SystemMediaAction, images: List<MediaImage>) {
         val uris = images.map(MediaImage::uri).distinct()
-        if (uris.isEmpty()) return@request
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val request = MediaStore.createTrashRequest(resolver, uris, true)
-                bulkRequestActive = true
-                permissionLauncher.launch(
-                    IntentSenderRequest.Builder(request.intentSender).build(),
-                )
-            } catch (error: Throwable) {
-                bulkRequestActive = false
+        if (uris.isEmpty()) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            if (action == SystemMediaAction.Trash || action == SystemMediaAction.DeletePermanently) {
                 Toast.makeText(
                     context,
-                    error.message ?: "Не удалось открыть системную корзину",
-                    Toast.LENGTH_SHORT,
+                    "На Android 10 системной корзины нет — файлы будут удалены с устройства",
+                    Toast.LENGTH_LONG,
                 ).show()
+                legacyQueue = uris
+                legacyInProgress = true
+            } else {
+                Toast.makeText(context, "Восстановление доступно с Android 11", Toast.LENGTH_SHORT).show()
             }
-        } else {
-            legacyQueue = uris
-            legacyInProgress = true
+            return
+        }
+
+        try {
+            val pendingIntent = when (action) {
+                SystemMediaAction.Trash -> MediaStore.createTrashRequest(resolver, uris, true)
+                SystemMediaAction.Restore -> MediaStore.createTrashRequest(resolver, uris, false)
+                SystemMediaAction.DeletePermanently -> MediaStore.createDeleteRequest(resolver, uris)
+            }
+            systemAction = action
+            permissionLauncher.launch(
+                IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
+            )
+        } catch (error: Throwable) {
+            systemAction = null
+            Toast.makeText(
+                context,
+                error.message ?: "Не удалось открыть системное подтверждение",
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
+
+    return MediaTrashController(
+        moveToTrash = { images -> launchSystemAction(SystemMediaAction.Trash, images) },
+        restore = { images -> launchSystemAction(SystemMediaAction.Restore, images) },
+        deletePermanently = { images ->
+            launchSystemAction(SystemMediaAction.DeletePermanently, images)
+        },
+    )
+}
+
+@Composable
+fun rememberMediaDeleteRequester(
+    onFinished: () -> Unit,
+): (List<MediaImage>) -> Unit = rememberMediaTrashController(onFinished).moveToTrash
+
+private fun SystemMediaAction.successMessage(): String = when (this) {
+    SystemMediaAction.Trash -> "Перемещено в корзину"
+    SystemMediaAction.Restore -> "Файлы восстановлены"
+    SystemMediaAction.DeletePermanently -> "Файлы удалены навсегда"
+}
+
+private fun SystemMediaAction.cancelMessage(): String = when (this) {
+    SystemMediaAction.Trash -> "Перемещение в корзину отменено"
+    SystemMediaAction.Restore -> "Восстановление отменено"
+    SystemMediaAction.DeletePermanently -> "Удаление отменено"
 }
