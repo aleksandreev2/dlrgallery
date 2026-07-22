@@ -156,7 +156,7 @@ class LocalTrashRepository(context: Context) {
             throw IOException("Не удалось подготовить локальную корзину")
         }
 
-        try {
+        return try {
             val payloadName = PAYLOAD_BASENAME + fileExtension(image.displayName, image.mimeType)
             val payloadFile = File(entryDirectory, payloadName)
             resolver.openInputStream(image.uri)?.use { input ->
