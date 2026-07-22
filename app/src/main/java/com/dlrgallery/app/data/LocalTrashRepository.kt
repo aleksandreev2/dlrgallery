@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
@@ -34,18 +35,115 @@ class LocalTrashRepository(context: Context) {
     suspend fun loadEntries(): List<LocalTrashEntry> = withContext(Dispatchers.IO) {
         ensureDirectories()
         recoverInterruptedMoves()
-        purgeExpiredInternal()
-        activeDirectory.listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter(File::isDirectory)
-            .mapNotNull(::readEntry)
-            .sortedByDescending(LocalTrashEntry::dateDeletedMillis)
-            .toList()
+        removeCorruptedEntries()
+        readActiveEntries()
     }
+
+    /**
+     * Android 10 cannot silently modify media created by other apps. Instead of requesting consent
+     * while the user is merely moving an item to trash, DLR Gallery creates a private recovery copy
+     * and hides the original from its own library. Physical deletion happens only when the user
+     * explicitly chooses "Delete permanently".
+     */
+    suspend fun moveToTrash(images: Collection<MediaImage>): LocalTrashOperationResult =
+        withContext(Dispatchers.IO) {
+            ensureDirectories()
+            recoverInterruptedMoves()
+            val existingUris = readActiveEntries()
+                .mapTo(mutableSetOf()) { it.originalUri.toString() }
+            var moved = 0
+            var failed = 0
+
+            images.distinctBy { it.uri.toString() }.forEach { image ->
+                if (image.uri.toString() in existingUris) {
+                    moved += 1
+                    return@forEach
+                }
+                runCatching {
+                    val stage = stageInternal(image)
+                    promoteToActive(File(stage.pendingDirectoryPath))
+                }.onSuccess {
+                    existingUris += image.uri.toString()
+                    moved += 1
+                }.onFailure {
+                    failed += 1
+                }
+            }
+            LocalTrashOperationResult(moved, failed)
+        }
 
     suspend fun stage(image: MediaImage): StagedLocalTrashEntry = withContext(Dispatchers.IO) {
         ensureDirectories()
+        stageInternal(image)
+    }
+
+    suspend fun commit(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
+        ensureDirectories()
+        val pending = File(stage.pendingDirectoryPath)
+        val active = File(activeDirectory, stage.id)
+        when {
+            pending.isDirectory && readEntry(pending) != null -> promoteToActive(pending)
+            active.isDirectory && readEntry(active) != null -> Unit
+            else -> throw IOException("Резервная копия корзины потеряна")
+        }
+    }
+
+    suspend fun discard(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
+        File(stage.pendingDirectoryPath).deleteRecursively()
+    }
+
+    suspend fun restore(ids: Collection<String>): LocalTrashOperationResult = withContext(Dispatchers.IO) {
+        ensureDirectories()
+        recoverInterruptedMoves()
+        var restored = 0
+        var failed = 0
+        ids.distinct().forEach { id ->
+            val directory = File(activeDirectory, id)
+            val entry = readEntry(directory)
+            if (entry == null) {
+                failed += 1
+                return@forEach
+            }
+            runCatching {
+                if (!isOriginalReadable(entry.originalUri)) {
+                    restoreEntry(entry)
+                }
+            }.onSuccess {
+                if (directory.deleteRecursively()) {
+                    restored += 1
+                } else {
+                    failed += 1
+                }
+            }.onFailure {
+                failed += 1
+            }
+        }
+        LocalTrashOperationResult(restored, failed)
+    }
+
+    /** Removes only the private recovery copy after the original media has been deleted. */
+    suspend fun deletePermanently(ids: Collection<String>): LocalTrashOperationResult =
+        withContext(Dispatchers.IO) {
+            ensureDirectories()
+            recoverInterruptedMoves()
+            var deleted = 0
+            var failed = 0
+            ids.distinct().forEach { id ->
+                val directory = File(activeDirectory, id)
+                if (!directory.exists() || directory.deleteRecursively()) {
+                    deleted += 1
+                } else {
+                    failed += 1
+                }
+            }
+            LocalTrashOperationResult(deleted, failed)
+        }
+
+    suspend fun isOriginalReadable(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        originalCanBeRead(uri)
+    }
+
+    private fun stageInternal(image: MediaImage): StagedLocalTrashEntry {
         val requiredBytes = max(image.sizeBytes, MINIMUM_RESERVED_BYTES) + MINIMUM_RESERVED_BYTES
         val availableBytes = StatFs(rootDirectory.absolutePath).availableBytes
         if (availableBytes < requiredBytes) {
@@ -82,7 +180,7 @@ class LocalTrashRepository(context: Context) {
                 payloadName = payloadName,
                 thumbnailName = thumbnailFile.takeIf(File::isFile)?.name.orEmpty(),
                 dateDeletedMillis = now,
-                dateExpiresMillis = now + RETENTION_MILLIS,
+                dateExpiresMillis = 0L,
             )
             StagedLocalTrashEntry(id = id, pendingDirectoryPath = entryDirectory.absolutePath)
         } catch (error: Throwable) {
@@ -91,60 +189,11 @@ class LocalTrashRepository(context: Context) {
         }
     }
 
-    suspend fun commit(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
-        ensureDirectories()
-        val pending = File(stage.pendingDirectoryPath)
-        if (!pending.isDirectory || readEntry(pending) == null) {
-            throw IOException("Резервная копия корзины потеряна")
-        }
-        promoteToActive(pending)
-    }
-
-    suspend fun discard(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
-        File(stage.pendingDirectoryPath).deleteRecursively()
-    }
-
-    suspend fun restore(ids: Collection<String>): LocalTrashOperationResult = withContext(Dispatchers.IO) {
-        ensureDirectories()
-        recoverInterruptedMoves()
-        var restored = 0
-        var failed = 0
-        ids.distinct().forEach { id ->
-            val directory = File(activeDirectory, id)
-            val entry = readEntry(directory)
-            if (entry == null) {
-                failed += 1
-                return@forEach
-            }
-            runCatching { restoreEntry(entry) }
-                .onSuccess {
-                    directory.deleteRecursively()
-                    restored += 1
-                }
-                .onFailure { failed += 1 }
-        }
-        LocalTrashOperationResult(restored, failed)
-    }
-
-    suspend fun deletePermanently(ids: Collection<String>): LocalTrashOperationResult = withContext(Dispatchers.IO) {
-        ensureDirectories()
-        recoverInterruptedMoves()
-        var deleted = 0
-        var failed = 0
-        ids.distinct().forEach { id ->
-            val directory = File(activeDirectory, id)
-            if (!directory.exists() || directory.deleteRecursively()) {
-                deleted += 1
-            } else {
-                failed += 1
-            }
-        }
-        LocalTrashOperationResult(deleted, failed)
-    }
-
     private fun restoreEntry(entry: LocalTrashEntry) {
         val payload = entry.payloadFile
-        if (!payload.isFile) throw IOException("Файл в корзине повреждён")
+        if (!payload.isFile || payload.length() <= 0L) {
+            throw IOException("Файл в корзине повреждён")
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             restoreWithMediaStore(entry, payload)
@@ -193,7 +242,10 @@ class LocalTrashRepository(context: Context) {
         if (!destinationDirectory.exists() && !destinationDirectory.mkdirs()) {
             throw IOException("Не удалось создать папку для восстановления")
         }
-        val destination = uniqueDestination(destinationDirectory, entry.displayName.ifBlank { fallbackName(entry) })
+        val destination = uniqueDestination(
+            destinationDirectory,
+            entry.displayName.ifBlank { fallbackName(entry) },
+        )
         FileInputStream(payload).use { input ->
             FileOutputStream(destination).use { output ->
                 input.copyTo(output, COPY_BUFFER_SIZE)
@@ -208,11 +260,7 @@ class LocalTrashRepository(context: Context) {
         )
     }
 
-    /**
-     * A completely written pending copy is never deleted automatically. MIUI can keep a stale
-     * MediaStore row after the original file is gone, so checking that row can destroy the only
-     * remaining copy. An interrupted operation may therefore leave a duplicate, but never data loss.
-     */
+    /** A fully written pending copy is always promoted. Data safety is more important than deduping. */
     private fun recoverInterruptedMoves() {
         pendingDirectory.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
             if (readEntry(directory) == null) {
@@ -244,15 +292,19 @@ class LocalTrashRepository(context: Context) {
         }
     }
 
-    private fun purgeExpiredInternal() {
-        val now = System.currentTimeMillis()
+    private fun removeCorruptedEntries() {
         activeDirectory.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
-            val entry = readEntry(directory)
-            if (entry == null || (entry.dateExpiresMillis > 0L && entry.dateExpiresMillis <= now)) {
-                directory.deleteRecursively()
-            }
+            if (readEntry(directory) == null) directory.deleteRecursively()
         }
     }
+
+    private fun readActiveEntries(): List<LocalTrashEntry> = activeDirectory.listFiles()
+        .orEmpty()
+        .asSequence()
+        .filter(File::isDirectory)
+        .mapNotNull(::readEntry)
+        .sortedByDescending(LocalTrashEntry::dateDeletedMillis)
+        .toList()
 
     private fun migrateLegacyExternalStorage() {
         val legacyRoot = legacyExternalRoot ?: return
@@ -314,12 +366,17 @@ class LocalTrashRepository(context: Context) {
 
     private fun readEntry(directory: File): LocalTrashEntry? {
         val properties = readProperties(directory) ?: return null
+        val originalUri = properties.getProperty(KEY_ORIGINAL_URI)
+            ?.takeIf(String::isNotBlank)
+            ?.let(Uri::parse)
+            ?: return null
         val payloadName = properties.getProperty(KEY_PAYLOAD_NAME).orEmpty()
         val payload = File(directory, payloadName)
         if (payloadName.isBlank() || !payload.isFile || payload.length() <= 0L) return null
         val thumbnailName = properties.getProperty(KEY_THUMBNAIL_NAME).orEmpty()
         return LocalTrashEntry(
             id = directory.name,
+            originalUri = originalUri,
             displayName = properties.getProperty(KEY_DISPLAY_NAME).orEmpty(),
             mimeType = properties.getProperty(KEY_MIME_TYPE).orEmpty(),
             isVideo = properties.getProperty(KEY_IS_VIDEO).toBoolean(),
@@ -345,6 +402,10 @@ class LocalTrashRepository(context: Context) {
         }
     }.getOrNull()
 
+    private fun originalCanBeRead(uri: Uri): Boolean = runCatching {
+        resolver.openInputStream(uri)?.use { input -> input.read() >= 0 } ?: false
+    }.getOrDefault(false)
+
     private fun createThumbnail(image: MediaImage, payload: File, target: File) {
         val bitmap = runCatching {
             when {
@@ -357,7 +418,10 @@ class LocalTrashRepository(context: Context) {
         }.getOrNull() ?: return
 
         runCatching {
-            FileOutputStream(target).use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output) }
+            FileOutputStream(target).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output)
+                output.fd.sync()
+            }
         }
         bitmap.recycle()
     }
@@ -391,7 +455,10 @@ class LocalTrashRepository(context: Context) {
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sampleSize = 1
-        while (bounds.outWidth / sampleSize > requiredWidth * 2 || bounds.outHeight / sampleSize > requiredHeight * 2) {
+        while (
+            bounds.outWidth / sampleSize > requiredWidth * 2 ||
+            bounds.outHeight / sampleSize > requiredHeight * 2
+        ) {
             sampleSize *= 2
         }
         return BitmapFactory.decodeFile(
@@ -474,7 +541,6 @@ class LocalTrashRepository(context: Context) {
         private const val THUMBNAIL_SIZE = 512
         private const val COPY_BUFFER_SIZE = 256 * 1024
         private const val MINIMUM_RESERVED_BYTES = 8L * 1024L * 1024L
-        private const val RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1_000L
 
         private const val KEY_ORIGINAL_URI = "originalUri"
         private const val KEY_DISPLAY_NAME = "displayName"
