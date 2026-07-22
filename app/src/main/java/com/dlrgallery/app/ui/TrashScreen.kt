@@ -74,6 +74,7 @@ fun TrashScreen(
     onRestore: (List<TrashItem>) -> Unit,
     onDeletePermanently: (List<TrashItem>) -> Unit,
 ) {
+    val localTrash = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var permanentDeleteItems by remember { mutableStateOf<List<TrashItem>>(emptyList()) }
     var showEmptyTrashDialog by rememberSaveable { mutableStateOf(false) }
@@ -133,7 +134,12 @@ fun TrashScreen(
                         )
                         if (items.isNotEmpty()) {
                             Text(
-                                text = "${formatTrashCount(items.size)} · ${formatTrashSize(totalSize)} · до 30 дней",
+                                text = buildString {
+                                    append(formatTrashCount(items.size))
+                                    append(" · ")
+                                    append(formatTrashSize(totalSize))
+                                    append(if (localTrash) " · до ручной очистки" else " · до 30 дней")
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -166,7 +172,7 @@ fun TrashScreen(
         }
 
         if (items.isEmpty()) {
-            EmptyTrashState()
+            EmptyTrashState(localTrash = localTrash)
         } else {
             TrashGrid(
                 items = items,
@@ -186,6 +192,7 @@ fun TrashScreen(
     if (permanentDeleteItems.isNotEmpty()) {
         PermanentDeleteDialog(
             count = permanentDeleteItems.size,
+            localTrash = permanentDeleteItems.any { it.localEntryId != null },
             onDismiss = { permanentDeleteItems = emptyList() },
             onConfirm = {
                 val selected = permanentDeleteItems
@@ -200,6 +207,7 @@ fun TrashScreen(
         PermanentDeleteDialog(
             count = items.size,
             emptyTrash = true,
+            localTrash = items.any { it.localEntryId != null },
             onDismiss = { showEmptyTrashDialog = false },
             onConfirm = {
                 showEmptyTrashDialog = false
@@ -240,7 +248,7 @@ private fun TrashGrid(
 
 @Composable
 private fun TrashInfoBanner() {
-    val legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+    val localTrash = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -250,13 +258,13 @@ private fun TrashInfoBanner() {
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
             Text(
-                text = if (legacy) "Локальная корзина DLR Gallery" else "Системная корзина Android",
+                text = if (localTrash) "Локальная корзина DLR Gallery" else "Системная корзина Android",
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             Text(
-                text = if (legacy) {
-                    "Оригинал удаляется только после создания безопасной копии. При удалении приложения содержимое этой корзины также исчезнет."
+                text = if (localTrash) {
+                    "При перемещении сюда системного окна нет: DLR Gallery сохраняет резервную копию и скрывает оригинал внутри приложения. Другие галереи могут продолжать видеть оригинал. Подтверждение Android понадобится только при удалении навсегда."
                 } else {
                     "Файлы хранятся в системной корзине устройства и автоматически удаляются Android."
                 },
@@ -351,7 +359,11 @@ private fun TrashTile(
             shape = RoundedCornerShape(8.dp),
         ) {
             Text(
-                text = formatExpiration(item.dateExpiresMillis),
+                text = if (item.localEntryId != null) {
+                    "До удаления вручную"
+                } else {
+                    formatExpiration(item.dateExpiresMillis)
+                },
                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall,
@@ -380,7 +392,7 @@ private fun TrashTile(
 }
 
 @Composable
-private fun EmptyTrashState() {
+private fun EmptyTrashState(localTrash: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -410,7 +422,11 @@ private fun EmptyTrashState() {
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "Удалённые через DLR Gallery фотографии и видео будут храниться здесь до 30 дней.",
+                text = if (localTrash) {
+                    "Удалённые через DLR Gallery фотографии и видео будут храниться здесь до восстановления или ручного удаления."
+                } else {
+                    "Удалённые через DLR Gallery фотографии и видео будут храниться здесь до 30 дней."
+                },
                 modifier = Modifier.padding(top = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -423,6 +439,7 @@ private fun EmptyTrashState() {
 private fun PermanentDeleteDialog(
     count: Int,
     emptyTrash: Boolean = false,
+    localTrash: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -432,10 +449,15 @@ private fun PermanentDeleteDialog(
         title = { Text(if (emptyTrash) "Очистить корзину?" else "Удалить навсегда?") },
         text = {
             Text(
-                if (emptyTrash) {
-                    "Все ${formatTrashCount(count)} будут окончательно удалены. Это действие нельзя отменить."
-                } else {
-                    "${formatTrashCount(count)} будут окончательно удалены. Восстановить их после этого не получится."
+                buildString {
+                    if (emptyTrash) {
+                        append("Все ${formatTrashCount(count)} будут окончательно удалены. Это действие нельзя отменить.")
+                    } else {
+                        append("${formatTrashCount(count)} будут окончательно удалены. Восстановить их после этого не получится.")
+                    }
+                    if (localTrash) {
+                        append(" Android 10 попросит подтвердить физическое удаление оригинала.")
+                    }
                 },
             )
         },
@@ -476,7 +498,11 @@ private fun formatTrashSize(bytes: Long): String {
     val units = listOf("Б", "КБ", "МБ", "ГБ")
     val group = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(units.indices)
     val value = bytes / 1024.0.pow(group.toDouble())
-    return if (group == 0) "${value.toInt()} ${units[group]}" else "%.1f %s".format(value, units[group])
+    return if (group == 0) {
+        "${value.toInt()} ${units[group]}"
+    } else {
+        "%.1f %s".format(value, units[group])
+    }
 }
 
 private fun formatTrashDuration(milliseconds: Long): String {
