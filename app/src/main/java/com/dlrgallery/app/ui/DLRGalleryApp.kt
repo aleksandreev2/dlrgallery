@@ -283,7 +283,12 @@ fun DLRGalleryApp(
                     val selected = item == destination
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { destination = item },
+                        onClick = {
+                            destination = item
+                            if (item == GalleryDestination.Trash) {
+                                galleryViewModel.refresh()
+                            }
+                        },
                         icon = {
                             Icon(
                                 imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
