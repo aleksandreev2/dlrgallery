@@ -57,23 +57,35 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 errorMessage = null,
             )
             try {
-                val images = if (access == MediaAccess.None) emptyList() else repository.loadImages()
+                val allImages = if (access == MediaAccess.None) emptyList() else repository.loadImages()
                 val systemTrash = if (access == MediaAccess.None) {
                     emptyList()
                 } else {
                     repository.loadTrashedImages()
                 }
+                val localEntries = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    localTrashRepository.loadEntries()
+                } else {
+                    emptyList()
+                }
+                val hiddenUris = localEntries
+                    .mapTo(mutableSetOf()) { it.originalUri.toString() }
+                val visibleImages = if (hiddenUris.isEmpty()) {
+                    allImages
+                } else {
+                    allImages.filterNot { it.uri.toString() in hiddenUris }
+                }
                 val trashItems = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     systemTrash.map(MediaImage::toTrashItem)
                 } else {
-                    localTrashRepository.loadEntries().map { it.toTrashItem() }
+                    localEntries.map { it.toTrashItem() }
                 }
                 _uiState.value = GalleryUiState(
                     access = access,
                     isLoading = false,
-                    images = images,
+                    images = visibleImages,
                     trashedImages = systemTrash,
-                    albums = repository.buildAlbums(images),
+                    albums = repository.buildAlbums(visibleImages),
                     trashItems = trashItems,
                     isTrashBusy = previous.isTrashBusy,
                     operationMessage = previous.operationMessage,
@@ -102,14 +114,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         runLocalTrashOperation(
             operation = { localTrashRepository.restore(ids) },
             successWord = "Восстановлено",
-        )
-    }
-
-    fun deleteLocalTrashPermanently(ids: Collection<String>) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || ids.isEmpty()) return
-        runLocalTrashOperation(
-            operation = { localTrashRepository.deletePermanently(ids) },
-            successWord = "Удалено навсегда",
         )
     }
 
