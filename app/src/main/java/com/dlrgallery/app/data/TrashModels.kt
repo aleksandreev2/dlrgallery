@@ -6,6 +6,7 @@ import java.io.File
 /** A private trash entry used on Android 10 and older devices. */
 data class LocalTrashEntry(
     val id: String,
+    val originalUri: Uri,
     val displayName: String,
     val mimeType: String,
     val isVideo: Boolean,
@@ -44,6 +45,7 @@ data class TrashItem(
     val dateExpiresMillis: Long,
     val systemMedia: MediaImage? = null,
     val localEntryId: String? = null,
+    val localOriginalUri: Uri? = null,
 )
 
 fun MediaImage.toTrashItem(): TrashItem = TrashItem(
@@ -70,5 +72,6 @@ fun LocalTrashEntry.toTrashItem(): TrashItem {
         dateDeletedMillis = dateDeletedMillis,
         dateExpiresMillis = dateExpiresMillis,
         localEntryId = id,
+        localOriginalUri = originalUri,
     )
 }
