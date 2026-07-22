@@ -163,9 +163,9 @@ fun DLRGalleryApp(
 
     fun deleteTrashItemsPermanently(items: List<TrashItem>) {
         val systemItems = items.mapNotNull(TrashItem::systemMedia)
-        val localIds = items.mapNotNull(TrashItem::localEntryId)
+        val localItems = items.filter { it.localEntryId != null }
         if (systemItems.isNotEmpty()) trashController.deletePermanently(systemItems)
-        if (localIds.isNotEmpty()) galleryViewModel.deleteLocalTrashPermanently(localIds)
+        if (localItems.isNotEmpty()) trashController.deleteLocalPermanently(localItems)
     }
 
     LaunchedEffect(uiState.images, uiState.trashedImages, uiState.isLoading, uiState.access) {
