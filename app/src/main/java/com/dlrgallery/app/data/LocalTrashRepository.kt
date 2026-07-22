@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
@@ -25,12 +24,12 @@ import kotlin.math.max
 class LocalTrashRepository(context: Context) {
     private val appContext = context.applicationContext
     private val resolver = appContext.contentResolver
-    private val rootDirectory = File(
-        appContext.getExternalFilesDir(null) ?: appContext.filesDir,
-        ROOT_DIRECTORY_NAME,
-    )
+    private val rootDirectory = File(appContext.filesDir, ROOT_DIRECTORY_NAME)
     private val activeDirectory = File(rootDirectory, ACTIVE_DIRECTORY_NAME)
     private val pendingDirectory = File(rootDirectory, PENDING_DIRECTORY_NAME)
+    private val legacyExternalRoot = appContext.getExternalFilesDir(null)
+        ?.let { File(it, ROOT_DIRECTORY_NAME) }
+        ?.takeUnless { it.absolutePath == rootDirectory.absolutePath }
 
     suspend fun loadEntries(): List<LocalTrashEntry> = withContext(Dispatchers.IO) {
         ensureDirectories()
@@ -95,17 +94,10 @@ class LocalTrashRepository(context: Context) {
     suspend fun commit(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
         ensureDirectories()
         val pending = File(stage.pendingDirectoryPath)
-        if (!pending.isDirectory) {
+        if (!pending.isDirectory || readEntry(pending) == null) {
             throw IOException("Резервная копия корзины потеряна")
         }
-        val active = File(activeDirectory, stage.id)
-        if (active.exists()) active.deleteRecursively()
-        if (!pending.renameTo(active)) {
-            if (!pending.copyRecursively(active, overwrite = false)) {
-                throw IOException("Не удалось завершить перемещение в корзину")
-            }
-            pending.deleteRecursively()
-        }
+        promoteToActive(pending)
     }
 
     suspend fun discard(stage: StagedLocalTrashEntry) = withContext(Dispatchers.IO) {
@@ -113,6 +105,8 @@ class LocalTrashRepository(context: Context) {
     }
 
     suspend fun restore(ids: Collection<String>): LocalTrashOperationResult = withContext(Dispatchers.IO) {
+        ensureDirectories()
+        recoverInterruptedMoves()
         var restored = 0
         var failed = 0
         ids.distinct().forEach { id ->
@@ -133,6 +127,8 @@ class LocalTrashRepository(context: Context) {
     }
 
     suspend fun deletePermanently(ids: Collection<String>): LocalTrashOperationResult = withContext(Dispatchers.IO) {
+        ensureDirectories()
+        recoverInterruptedMoves()
         var deleted = 0
         var failed = 0
         ids.distinct().forEach { id ->
@@ -212,25 +208,39 @@ class LocalTrashRepository(context: Context) {
         )
     }
 
+    /**
+     * A completely written pending copy is never deleted automatically. MIUI can keep a stale
+     * MediaStore row after the original file is gone, so checking that row can destroy the only
+     * remaining copy. An interrupted operation may therefore leave a duplicate, but never data loss.
+     */
     private fun recoverInterruptedMoves() {
         pendingDirectory.listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
-            val properties = readProperties(directory) ?: run {
-                directory.deleteRecursively()
-                return@forEach
-            }
-            val originalUri = properties.getProperty(KEY_ORIGINAL_URI)
-                ?.takeIf(String::isNotBlank)
-                ?.let(Uri::parse)
-            val originalStillExists = originalUri?.let(::mediaExists) ?: true
-            if (originalStillExists) {
+            if (readEntry(directory) == null) {
                 directory.deleteRecursively()
             } else {
-                val active = File(activeDirectory, directory.name)
-                if (!directory.renameTo(active)) {
-                    directory.copyRecursively(active, overwrite = false)
-                    directory.deleteRecursively()
-                }
+                promoteToActive(directory)
             }
+        }
+    }
+
+    private fun promoteToActive(source: File) {
+        val active = File(activeDirectory, source.name)
+        if (active.exists()) {
+            if (readEntry(active) != null) {
+                source.deleteRecursively()
+                return
+            }
+            active.deleteRecursively()
+        }
+        if (!source.renameTo(active)) {
+            if (!source.copyRecursively(active, overwrite = false)) {
+                throw IOException("Не удалось завершить перемещение в корзину")
+            }
+            source.deleteRecursively()
+        }
+        if (readEntry(active) == null) {
+            active.deleteRecursively()
+            throw IOException("Запись корзины повреждена после перемещения")
         }
     }
 
@@ -244,11 +254,32 @@ class LocalTrashRepository(context: Context) {
         }
     }
 
-    private fun mediaExists(uri: Uri): Boolean = runCatching {
-        resolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { cursor ->
-            cursor.moveToFirst()
-        } ?: false
-    }.getOrDefault(false)
+    private fun migrateLegacyExternalStorage() {
+        val legacyRoot = legacyExternalRoot ?: return
+        if (!legacyRoot.isDirectory) return
+
+        migrateChildren(File(legacyRoot, ACTIVE_DIRECTORY_NAME), activeDirectory)
+        migrateChildren(File(legacyRoot, PENDING_DIRECTORY_NAME), pendingDirectory)
+        legacyRoot.deleteRecursively()
+    }
+
+    private fun migrateChildren(sourceParent: File, destinationParent: File) {
+        sourceParent.listFiles().orEmpty().filter(File::isDirectory).forEach { source ->
+            val destination = File(destinationParent, source.name)
+            if (destination.exists()) {
+                if (readEntry(destination) != null) {
+                    source.deleteRecursively()
+                    return@forEach
+                }
+                destination.deleteRecursively()
+            }
+            if (!source.renameTo(destination)) {
+                if (source.copyRecursively(destination, overwrite = false)) {
+                    source.deleteRecursively()
+                }
+            }
+        }
+    }
 
     private fun writeMetadata(
         directory: File,
@@ -285,7 +316,7 @@ class LocalTrashRepository(context: Context) {
         val properties = readProperties(directory) ?: return null
         val payloadName = properties.getProperty(KEY_PAYLOAD_NAME).orEmpty()
         val payload = File(directory, payloadName)
-        if (payloadName.isBlank() || !payload.isFile) return null
+        if (payloadName.isBlank() || !payload.isFile || payload.length() <= 0L) return null
         val thumbnailName = properties.getProperty(KEY_THUMBNAIL_NAME).orEmpty()
         return LocalTrashEntry(
             id = directory.name,
@@ -370,8 +401,16 @@ class LocalTrashRepository(context: Context) {
     }
 
     private fun ensureDirectories() {
-        if (!activeDirectory.exists()) activeDirectory.mkdirs()
-        if (!pendingDirectory.exists()) pendingDirectory.mkdirs()
+        if (!rootDirectory.exists() && !rootDirectory.mkdirs()) {
+            throw IOException("Не удалось открыть приватное хранилище корзины")
+        }
+        if (!activeDirectory.exists() && !activeDirectory.mkdirs()) {
+            throw IOException("Не удалось открыть содержимое корзины")
+        }
+        if (!pendingDirectory.exists() && !pendingDirectory.mkdirs()) {
+            throw IOException("Не удалось открыть временное хранилище корзины")
+        }
+        migrateLegacyExternalStorage()
     }
 
     private fun normalizeRelativePath(relativePath: String, bucketName: String): String {
